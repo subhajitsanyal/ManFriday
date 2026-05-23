@@ -62,12 +62,12 @@ Work items:
 
 | ID | Task | Owner | Dependencies | Evidence required | Status |
 | --- | --- | --- | --- | --- | --- |
-| P0-01 | Create backend package skeleton and dependency manager | Backend Control Plane | none | `backend/manfriday` importable; backend test command documented | Not started |
-| P0-02 | Add typed config model and `.env.example` | Backend Control Plane | P0-01 | config tests; required keys listed | Not started |
-| P0-03 | Add FastAPI app with unauthenticated `GET /health` | Backend Control Plane | P0-01 | health test and local curl output | Not started |
-| P0-04 | Create Android Compose app skeleton with setup/active navigation | Android Client | none | Android build succeeds | Not started |
-| P0-05 | Document local development startup and CI-style commands | QA, Release, And Integration | P0-01, P0-04 | README or engineering startup doc | Not started |
-| P0-06 | Define fixture strategy for non-hardware validation | QA, Release, And Integration | none | fixture plan covers frame, LiveKit, model, retrieval, Android mocks | Not started |
+| P0-01 | Create backend package skeleton and dependency manager | Backend Control Plane | none | `backend/manfriday` importable; backend test command documented | Implemented |
+| P0-02 | Add typed config model and `.env.example` | Backend Control Plane | P0-01 | config tests; required keys listed | Implemented |
+| P0-03 | Add FastAPI app with unauthenticated `GET /health` | Backend Control Plane | P0-01 | health test and local curl output | Implemented |
+| P0-04 | Create Android Compose app skeleton with setup/active navigation | Android Client | none | Android build succeeds | Implemented and verified |
+| P0-05 | Document local development startup and CI-style commands | QA, Release, And Integration | P0-01, P0-04 | README or engineering startup doc | Implemented |
+| P0-06 | Define fixture strategy for non-hardware validation | QA, Release, And Integration | none | fixture plan covers frame, LiveKit, model, retrieval, Android mocks | Implemented |
 
 Integration checkpoint:
 

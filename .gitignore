@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+backend/.state/
+backend/debug_artifacts/
+android/.gradle/
+android/local.properties
+android/build/
+android/app/build/

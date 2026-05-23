@@ -4,14 +4,15 @@
 
 Current phase: Phase 0, Repository And Development Baseline.
 
-MVP readiness status: Not ready. The repository currently contains requirements, architecture, agent role definitions, and TPM operating artifacts. Implementation skeletons and validation evidence are still pending.
+MVP readiness status: Not ready. Phase 0 backend skeleton, Android skeleton,
+fixture strategy, and baseline backend and Android validation are in place.
 
 ## Gate Summary
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Not started |
-| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Not started |
+| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Phase 0 baseline passing |
+| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Phase 0 skeleton build passing |
 | End-to-end gate | Android authenticates, joins LiveKit, starts session/GoPro, sees frames, asks spoken question, sees citations, safety constrains high-risk prompt, latency target met | Not started |
 | Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | Not started |
 | Privacy/debug gate | Debug artifacts targeted; no continuous audio or sampled-frame persistence; redaction and retention pass | Not started |
@@ -20,13 +21,13 @@ MVP readiness status: Not ready. The repository currently contains requirements,
 
 ### Phase 0
 
-- [ ] Backend package skeleton exists.
-- [ ] Backend starts locally.
-- [ ] `GET /health` returns documented service status.
-- [ ] Android skeleton builds.
-- [ ] `.env.example` includes all required config keys.
-- [ ] Local startup and test commands are documented.
-- [ ] Baseline config/health tests pass.
+- [x] Backend package skeleton exists.
+- [x] Backend starts locally.
+- [x] `GET /health` returns documented service status.
+- [x] Android skeleton builds.
+- [x] `.env.example` includes all required config keys.
+- [x] Local startup and test commands are documented.
+- [x] Baseline config/health tests pass.
 
 ### Phase 1
 

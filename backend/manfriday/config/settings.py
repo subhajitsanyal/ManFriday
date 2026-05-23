@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     livekit_url: str = Field(default="ws://localhost:7880", alias="LIVEKIT_URL")
     livekit_api_key: str = Field(default="devkey", alias="LIVEKIT_API_KEY")
     livekit_api_secret: SecretStr = Field(default=SecretStr("secret"), alias="LIVEKIT_API_SECRET")
+    livekit_token_ttl_seconds: int = Field(default=3600, alias="LIVEKIT_TOKEN_TTL_SECONDS")
 
     model_provider: str = Field(default="openai", alias="MODEL_PROVIDER")
     model_base_url: str | None = Field(default=None, alias="MODEL_BASE_URL")
@@ -58,6 +59,7 @@ class Settings(BaseSettings):
     tavily_api_key: SecretStr | None = Field(default=None, alias="TAVILY_API_KEY")
 
     session_idle_timeout_seconds: int = Field(default=7200, alias="SESSION_IDLE_TIMEOUT_SECONDS")
+    websocket_queue_limit: int = Field(default=32, alias="WEBSOCKET_QUEUE_LIMIT")
     debug_enabled: bool = Field(default=False, alias="DEBUG_ENABLED")
     debug_artifacts_dir: Path = Field(default=Path("debug_artifacts"), alias="DEBUG_ARTIFACTS_DIR")
     debug_max_sessions: int = Field(default=10, alias="DEBUG_MAX_SESSIONS")

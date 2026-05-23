@@ -9,7 +9,7 @@ frame sampling, retrieval, and OpenAI-compatible model calls.
 
 ```text
 ManFriday/
-  android/                    Android app source will live here.
+  android/                    Android app source and Compose UI.
   backend/                    Mac backend, LiveKit agent, GoPro/frame pipeline.
   docs/
     product/                  PRD and product decisions.
@@ -22,9 +22,11 @@ ManFriday/
 
 ## Current Status
 
-The current focus is Phase 0: repository and development baseline. The backend
-package skeleton, typed config, unauthenticated health endpoint, Android Compose
-skeleton, and fixture strategy are now in place.
+The current focus is Phase 1: auth, sessions, events, and LiveKit token control
+plane. The backend now has bearer-protected session APIs, in-memory session
+state, fake/local LiveKit token issuance, a bounded WebSocket event bus, and a
+worker entrypoint. The Android setup screen can start and end backend sessions
+and display the returned LiveKit room.
 
 Existing GoPro exploration code has been moved to:
 
@@ -32,8 +34,10 @@ Existing GoPro exploration code has been moved to:
 ../MiscExplorations/
 ```
 
-The implementation priority is the Phase 0 baseline first, then auth/session and
-LiveKit token control plane, followed by the GoPro/frame pipeline.
+The current implementation priority is Phase 2: GoPro and frame pipeline. A
+fixture-backed backend frame API is in place, and the Android active screen can
+refresh latest frame metadata and trigger Look. The next steps are real GoPro
+preview/sampling, Android image loading, and local manual validation.
 
 ## Backend Local Development
 
@@ -61,6 +65,13 @@ cd backend
 pytest
 ```
 
+Run the backend worker skeleton:
+
+```bash
+cd backend
+manfriday-agent
+```
+
 ## Android Local Development
 
 Prerequisites:
@@ -86,6 +97,24 @@ JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradle
 
 The emulator default backend URL is `http://10.0.2.2:8000`. A physical Android
 device should use the Mac's LAN IP address and port `8000`.
+
+The Android app sends `Authorization: Bearer <local-secret>` to the session REST
+APIs, opens `/ws?session_id=<id>` with the same bearer secret, and connects to
+the returned LiveKit room/token for audio. Cleartext HTTP is enabled for the
+local MVP network path.
+
+## Frame API Smoke
+
+With the backend running and `MANFRIDAY_LOCAL_SECRET` set:
+
+```bash
+curl -H "Authorization: Bearer <secret>" -X POST http://localhost:8000/gopro/start-preview
+curl -H "Authorization: Bearer <secret>" http://localhost:8000/frame/latest
+curl -H "Authorization: Bearer <secret>" -X POST http://localhost:8000/frame/look
+```
+
+The current preview path seeds a deterministic fixture frame. Real GoPro COHN
+control and UDP sampling are still pending Phase 2 work.
 
 ## Fixture Strategy
 

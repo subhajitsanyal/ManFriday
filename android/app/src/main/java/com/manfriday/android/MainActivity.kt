@@ -1,8 +1,12 @@
 package com.manfriday.android
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,13 +27,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,24 +59,199 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ManFridayApp() {
-    var isSessionActive by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     var backendUrl by rememberSaveable { mutableStateOf("http://10.0.2.2:8000") }
     var localSecret by rememberSaveable { mutableStateOf("") }
+    var session by remember { mutableStateOf<SessionConnection?>(null) }
+    var setupStatus by rememberSaveable { mutableStateOf("Ready") }
+    var liveKitStatus by rememberSaveable { mutableStateOf("Disconnected") }
+    var webSocketStatus by rememberSaveable { mutableStateOf("Disconnected") }
+    var lastEvent by rememberSaveable { mutableStateOf("None") }
+    var frameStatus by rememberSaveable { mutableStateOf("No frame") }
+    var isFrameLoading by rememberSaveable { mutableStateOf(false) }
+    var isLoading by rememberSaveable { mutableStateOf(false) }
+    val audioClient = remember { LiveKitAudioClient(context) }
+    var eventClient by remember { mutableStateOf<ManFridayWebSocketClient?>(null) }
+    val scope = rememberCoroutineScope()
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            liveKitStatus = "Microphone denied"
+        }
+    }
 
     ManFridayTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            if (isSessionActive) {
+            val activeSession = session
+            if (activeSession != null) {
                 ActiveCopilotScreen(
                     backendUrl = backendUrl,
-                    onEndSession = { isSessionActive = false },
+                    session = activeSession,
+                    liveKitStatus = liveKitStatus,
+                    webSocketStatus = webSocketStatus,
+                    lastEvent = lastEvent,
+                    frameStatus = frameStatus,
+                    isFrameLoading = isFrameLoading,
+                    onRefreshFrame = {
+                        scope.launch {
+                            isFrameLoading = true
+                            frameStatus = "Loading latest frame"
+                            runCatching {
+                                ManFridayBackendClient.latestFrame(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = activeSession.sessionId,
+                                )
+                            }.onSuccess {
+                                frameStatus = it.toStatusText()
+                            }.onFailure {
+                                frameStatus = it.message ?: "Latest frame failed"
+                            }
+                            isFrameLoading = false
+                        }
+                    },
+                    onLook = {
+                        scope.launch {
+                            isFrameLoading = true
+                            frameStatus = "Looking"
+                            runCatching {
+                                ManFridayBackendClient.lookFrame(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = activeSession.sessionId,
+                                )
+                            }.onSuccess {
+                                frameStatus = it.toStatusText()
+                                lastEvent = "frame.look"
+                            }.onFailure {
+                                frameStatus = it.message ?: "Look failed"
+                            }
+                            isFrameLoading = false
+                        }
+                    },
+                    onReconnect = {
+                        scope.launch {
+                            isLoading = true
+                            webSocketStatus = "Reconnecting"
+                            runCatching {
+                                val snapshot = ManFridayBackendClient.sessionStatus(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = activeSession.sessionId,
+                                )
+                                eventClient?.close()
+                                eventClient = startEventClient(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = snapshot.sessionId,
+                                    mainHandler = mainHandler,
+                                    onStatus = { webSocketStatus = it },
+                                    onEvent = { lastEvent = it },
+                                )
+                                snapshot
+                            }.onSuccess {
+                                session = activeSession.copy(
+                                    sessionId = it.sessionId,
+                                    expiresAt = it.expiresAt,
+                                    debugEnabled = it.debugEnabled,
+                                )
+                                lastEvent = "session.status.changed: ${it.status}"
+                            }.onFailure {
+                                webSocketStatus = "Reconnect failed"
+                                lastEvent = it.message ?: "Reconnect failed"
+                            }
+                            isLoading = false
+                        }
+                    },
+                    onEndSession = {
+                        scope.launch {
+                            isLoading = true
+                            setupStatus = "Ending session"
+                            liveKitStatus = "Disconnecting"
+                            webSocketStatus = "Disconnecting"
+                            runCatching {
+                                eventClient?.close()
+                                eventClient = null
+                                audioClient.disconnect()
+                                ManFridayBackendClient.endSession(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = activeSession.sessionId,
+                                )
+                            }.onSuccess {
+                                session = null
+                                setupStatus = "Session ended"
+                                liveKitStatus = "Disconnected"
+                                webSocketStatus = "Disconnected"
+                                lastEvent = "session.ended"
+                            }.onFailure {
+                                setupStatus = it.message ?: "Failed to end session"
+                                liveKitStatus = "Disconnect failed"
+                                webSocketStatus = "Disconnect failed"
+                            }
+                            isLoading = false
+                        }
+                    },
                 )
             } else {
                 SetupScreen(
                     backendUrl = backendUrl,
                     localSecret = localSecret,
+                    status = setupStatus,
+                    isLoading = isLoading,
                     onBackendUrlChange = { backendUrl = it },
                     onLocalSecretChange = { localSecret = it },
-                    onStartSession = { isSessionActive = true },
+                    onStartSession = {
+                        scope.launch {
+                            isLoading = true
+                            setupStatus = "Starting session"
+                            runCatching {
+                                microphonePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                val nextSession = ManFridayBackendClient.startSession(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                )
+                                liveKitStatus = "Connecting"
+                                audioClient.connect(nextSession)
+                                webSocketStatus = "Connecting"
+                                eventClient?.close()
+                                eventClient = startEventClient(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                    sessionId = nextSession.sessionId,
+                                    mainHandler = mainHandler,
+                                    onStatus = { webSocketStatus = it },
+                                    onEvent = { lastEvent = it },
+                                )
+                                nextSession
+                            }.onSuccess {
+                                session = it
+                                setupStatus = "Session active"
+                                liveKitStatus = "Connected"
+                                isFrameLoading = true
+                                frameStatus = "Loading latest frame"
+                                runCatching {
+                                    ManFridayBackendClient.latestFrame(
+                                        backendUrl = backendUrl,
+                                        localSecret = localSecret,
+                                        sessionId = it.sessionId,
+                                    )
+                                }.onSuccess { frame ->
+                                    frameStatus = frame.toStatusText()
+                                }.onFailure {
+                                    frameStatus = "No frame"
+                                }
+                                isFrameLoading = false
+                            }.onFailure {
+                                setupStatus = it.message ?: "Failed to start session"
+                                liveKitStatus = "Disconnected"
+                                webSocketStatus = "Disconnected"
+                            }
+                            isLoading = false
+                        }
+                    },
                 )
             }
         }
@@ -70,6 +262,8 @@ fun ManFridayApp() {
 private fun SetupScreen(
     backendUrl: String,
     localSecret: String,
+    status: String,
+    isLoading: Boolean,
     onBackendUrlChange: (String) -> Unit,
     onLocalSecretChange: (String) -> Unit,
     onStartSession: () -> Unit,
@@ -100,12 +294,13 @@ private fun SetupScreen(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
+            StatusLine(label = "Backend", value = status)
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = backendUrl.isNotBlank() && localSecret.isNotBlank(),
+                enabled = !isLoading && backendUrl.isNotBlank() && localSecret.isNotBlank(),
                 onClick = onStartSession,
             ) {
-                Text("Start session")
+                Text(if (isLoading) "Starting" else "Start session")
             }
         }
     }
@@ -114,6 +309,15 @@ private fun SetupScreen(
 @Composable
 private fun ActiveCopilotScreen(
     backendUrl: String,
+    session: SessionConnection,
+    liveKitStatus: String,
+    webSocketStatus: String,
+    lastEvent: String,
+    frameStatus: String,
+    isFrameLoading: Boolean,
+    onRefreshFrame: () -> Unit,
+    onLook: () -> Unit,
+    onReconnect: () -> Unit,
     onEndSession: () -> Unit,
 ) {
     var isListening by remember { mutableStateOf(false) }
@@ -139,10 +343,13 @@ private fun ActiveCopilotScreen(
                 }
             }
 
-            StatusLine(label = "Backend", value = "Configured")
-            StatusLine(label = "LiveKit", value = "Pending")
+            StatusLine(label = "Backend", value = "Connected")
+            StatusLine(label = "Session", value = session.sessionId)
+            StatusLine(label = "LiveKit", value = "$liveKitStatus: ${session.livekitRoom}")
+            StatusLine(label = "Events", value = webSocketStatus)
+            StatusLine(label = "Last event", value = lastEvent)
             StatusLine(label = "GoPro", value = "Pending")
-            StatusLine(label = "Visual", value = "No frame")
+            StatusLine(label = "Visual", value = frameStatus)
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -155,9 +362,25 @@ private fun ActiveCopilotScreen(
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = {},
+                enabled = !isFrameLoading,
+                onClick = onLook,
             ) {
-                Text("Look")
+                Text(if (isFrameLoading) "Looking" else "Look")
+            }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isFrameLoading,
+                onClick = onRefreshFrame,
+            ) {
+                Text("Refresh latest frame")
+            }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onReconnect,
+            ) {
+                Text("Reconnect")
             }
 
             Text("Transcript", style = MaterialTheme.typography.titleMedium)
@@ -189,9 +412,275 @@ private fun SetupPreview() {
         SetupScreen(
             backendUrl = "http://10.0.2.2:8000",
             localSecret = "secret",
+            status = "Ready",
+            isLoading = false,
             onBackendUrlChange = {},
             onLocalSecretChange = {},
             onStartSession = {},
         )
     }
+}
+
+data class SessionConnection(
+    val sessionId: String,
+    val livekitUrl: String,
+    val livekitRoom: String,
+    val livekitToken: String,
+    val expiresAt: String,
+    val debugEnabled: Boolean,
+)
+
+private data class SessionSnapshot(
+    val sessionId: String,
+    val status: String,
+    val expiresAt: String,
+    val debugEnabled: Boolean,
+)
+
+private data class FrameMetadata(
+    val frameId: String?,
+    val capturedAt: Instant?,
+    val width: Int?,
+    val height: Int?,
+    val source: String?,
+    val mimeType: String?,
+) {
+    fun toStatusText(now: Instant = Instant.now()): String {
+        val parts = mutableListOf<String>()
+        frameId?.takeIf { it.isNotBlank() }?.let { parts += it }
+        if (width != null && height != null) {
+            parts += "${width}x$height"
+        }
+        capturedAt?.let { parts += "${Duration.between(it, now).toHumanAge()} old" }
+        source?.takeIf { it.isNotBlank() }?.let { parts += it }
+        mimeType?.takeIf { it.isNotBlank() }?.let { parts += it }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" | ") ?: "Frame metadata received"
+    }
+}
+
+private object ManFridayBackendClient {
+    suspend fun startSession(
+        backendUrl: String,
+        localSecret: String,
+    ): SessionConnection = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/session/start",
+            localSecret = localSecret,
+            body = "{}",
+        )
+        val json = JSONObject(response)
+        val livekit = json.getJSONObject("livekit")
+        SessionConnection(
+            sessionId = json.getString("session_id"),
+            livekitUrl = livekit.getString("url"),
+            livekitRoom = livekit.getString("room"),
+            livekitToken = livekit.getString("token"),
+            expiresAt = json.getString("expires_at"),
+            debugEnabled = json.getBoolean("debug_enabled"),
+        )
+    }
+
+    suspend fun endSession(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            request(
+                method = "POST",
+                url = "${backendUrl.trimEnd('/')}/session/end",
+                localSecret = localSecret,
+                body = JSONObject().put("session_id", sessionId).toString(),
+            )
+        }
+    }
+
+    suspend fun sessionStatus(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+    ): SessionSnapshot = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "GET",
+            url = "${backendUrl.trimEnd('/')}/session/status?session_id=$sessionId",
+            localSecret = localSecret,
+            body = "",
+        )
+        val json = JSONObject(response)
+        SessionSnapshot(
+            sessionId = json.getString("session_id"),
+            status = json.getString("status"),
+            expiresAt = json.getString("expires_at"),
+            debugEnabled = json.getBoolean("debug_enabled"),
+        )
+    }
+
+    suspend fun latestFrame(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+    ): FrameMetadata = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "GET",
+            url = "${backendUrl.trimEnd('/')}/frame/latest?session_id=${sessionId.urlEncoded()}",
+            localSecret = localSecret,
+            body = "",
+        )
+        parseFrameMetadata(response)
+    }
+
+    suspend fun lookFrame(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+    ): FrameMetadata = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/frame/look",
+            localSecret = localSecret,
+            body = JSONObject().put("session_id", sessionId).toString(),
+        )
+        parseFrameMetadata(response)
+    }
+
+    private fun request(
+        method: String,
+        url: String,
+        localSecret: String,
+        body: String,
+    ): String {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 5_000
+            readTimeout = 5_000
+            doOutput = body.isNotEmpty()
+            setRequestProperty("Authorization", "Bearer $localSecret")
+            setRequestProperty("Content-Type", "application/json")
+        }
+        if (body.isNotEmpty()) {
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(body)
+            }
+        }
+        val stream = if (connection.responseCode in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
+        val response = stream.bufferedReader().use { it.readText() }
+        if (connection.responseCode !in 200..299) {
+            throw IllegalStateException("Backend returned ${connection.responseCode}: $response")
+        }
+        return response
+    }
+
+    private fun parseFrameMetadata(response: String): FrameMetadata {
+        val json = JSONObject(response)
+        val frame = json.optJSONObject("frame") ?: json.optJSONObject("metadata") ?: json
+        return FrameMetadata(
+            frameId = frame.firstString("frame_id", "id", "name"),
+            capturedAt = frame.firstInstant("captured_at", "timestamp", "created_at", "updated_at"),
+            width = frame.firstInt("width", "image_width"),
+            height = frame.firstInt("height", "image_height"),
+            source = frame.firstString("source", "camera", "device"),
+            mimeType = frame.firstString("mime_type", "content_type", "format"),
+        )
+    }
+}
+
+private fun JSONObject.firstString(vararg keys: String): String? {
+    for (key in keys) {
+        val value = optString(key, "")
+        if (value.isNotBlank()) {
+            return value
+        }
+    }
+    return null
+}
+
+private fun JSONObject.firstInt(vararg keys: String): Int? {
+    for (key in keys) {
+        if (has(key) && !isNull(key)) {
+            val value = optInt(key, -1)
+            if (value >= 0) {
+                return value
+            }
+        }
+    }
+    return null
+}
+
+private fun JSONObject.firstInstant(vararg keys: String): Instant? {
+    for (key in keys) {
+        if (has(key) && !isNull(key)) {
+            val stringValue = optString(key, "")
+            if (stringValue.isNotBlank()) {
+                runCatching { return Instant.parse(stringValue) }
+            }
+            val epochSeconds = optLong(key, Long.MIN_VALUE)
+            if (epochSeconds != Long.MIN_VALUE) {
+                return if (epochSeconds > 10_000_000_000L) {
+                    Instant.ofEpochMilli(epochSeconds)
+                } else {
+                    Instant.ofEpochSecond(epochSeconds)
+                }
+            }
+        }
+    }
+    return null
+}
+
+private fun Duration.toHumanAge(): String {
+    val seconds = seconds.coerceAtLeast(0)
+    return when {
+        seconds < 60 -> "${seconds}s"
+        seconds < 3_600 -> "${seconds / 60}m"
+        seconds < 86_400 -> "${seconds / 3_600}h"
+        else -> "${seconds / 86_400}d"
+    }
+}
+
+private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.name())
+
+private fun startEventClient(
+    backendUrl: String,
+    localSecret: String,
+    sessionId: String,
+    mainHandler: Handler,
+    onStatus: (String) -> Unit,
+    onEvent: (String) -> Unit,
+): ManFridayWebSocketClient {
+    val client = ManFridayWebSocketClient(
+        backendUrl = backendUrl,
+        sessionId = sessionId,
+        bearerSecret = localSecret,
+        callbacks = object : ManFridayWebSocketClient.Callbacks {
+            override fun onTextMessage(message: String) {
+                mainHandler.post {
+                    val json = runCatching { JSONObject(message) }.getOrNull()
+                    val type = json?.optString("type")?.takeIf { it.isNotBlank() } ?: "event"
+                    val status = json?.optJSONObject("payload")?.optString("status")
+                    onStatus(if (status.isNullOrBlank()) "Connected" else "Connected: $status")
+                    onEvent(type)
+                }
+            }
+
+            override fun onError(error: Throwable) {
+                mainHandler.post {
+                    onStatus("Error")
+                    onEvent(error.message ?: "WebSocket error")
+                }
+            }
+
+            override fun onClosed(code: Int?, reason: String?) {
+                mainHandler.post {
+                    onStatus("Disconnected")
+                    onEvent(reason ?: code?.toString() ?: "closed")
+                }
+            }
+        },
+    )
+    client.connect()
+    return client
 }

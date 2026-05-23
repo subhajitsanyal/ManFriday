@@ -2,19 +2,22 @@
 
 ## Current Readiness
 
-Current phase: Phase 0, Repository And Development Baseline.
+Current phase: Phase 2, GoPro And Frame Pipeline.
 
-MVP readiness status: Not ready. Phase 0 backend skeleton, Android skeleton,
-fixture strategy, and baseline backend and Android validation are in place.
+MVP readiness status: Not ready. Phase 0 is complete, and the Phase 1 backend
+control plane is in place. Android can start/end backend sessions, connect to
+the returned LiveKit room, and open the authenticated WebSocket event stream.
+Local manual LiveKit validation, real GoPro preview/sampler work, secure
+settings storage, and Android tests are still pending.
 
 ## Gate Summary
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Phase 0 baseline passing |
-| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Phase 0 skeleton build passing |
+| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Phase 1 auth/session tests passing |
+| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | LiveKit/WebSocket wiring implemented; secure storage and tests pending |
 | End-to-end gate | Android authenticates, joins LiveKit, starts session/GoPro, sees frames, asks spoken question, sees citations, safety constrains high-risk prompt, latency target met | Not started |
-| Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | Not started |
+| Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | Fixture frame API passing; real hardware not started |
 | Privacy/debug gate | Debug artifacts targeted; no continuous audio or sampled-frame persistence; redaction and retention pass | Not started |
 
 ## Phase Exit Checklist
@@ -31,25 +34,25 @@ fixture strategy, and baseline backend and Android validation are in place.
 
 ### Phase 1
 
-- [ ] REST bearer auth rejects missing, malformed, and wrong secrets.
-- [ ] WebSocket auth rejects missing, malformed, and wrong secrets.
-- [ ] `POST /session/start` returns session ID, LiveKit URL, room, token, expiry, and debug flag.
-- [ ] `POST /session/end` clears live memory hooks and returns ended status.
-- [ ] `GET /session/status` supports reconnect snapshot.
-- [ ] LiveKit token issuance works with fake/local settings.
-- [ ] Android starts session and joins returned LiveKit room.
-- [ ] Android reconnect recovers state.
+- [x] REST bearer auth rejects missing, malformed, and wrong secrets.
+- [x] WebSocket auth rejects missing, malformed, and wrong secrets.
+- [x] `POST /session/start` returns session ID, LiveKit URL, room, token, expiry, and debug flag.
+- [x] `POST /session/end` clears live memory hooks and returns ended status.
+- [x] `GET /session/status` supports reconnect snapshot.
+- [x] LiveKit token issuance works with fake/local settings.
+- [x] Android starts session and joins returned LiveKit room.
+- [x] Android reconnect recovers state.
 
 ### Phase 2
 
-- [ ] GoPro status and error models are implemented.
-- [ ] Start/stop preview endpoints are idempotent.
+- [x] GoPro status and error models are implemented.
+- [x] Start/stop preview endpoints are idempotent.
 - [ ] Reconfigure requires `confirm_clear_credentials: true`.
 - [ ] Fixture frame sampler tests pass.
 - [ ] Real GoPro preview produces sampled frames at 2 FPS.
-- [ ] `/frame/latest` and `/frame/{frame_id}.jpg` work.
-- [ ] `POST /frame/look` pins for 60 seconds.
-- [ ] Android displays latest frame and frame age.
+- [x] `/frame/latest` and `/frame/{frame_id}.jpg` work.
+- [x] `POST /frame/look` pins for 60 seconds.
+- [x] Android displays latest frame metadata and age.
 - [ ] Visual degraded state appears within 5 seconds of sampler failure.
 
 ### Phase 3
@@ -135,9 +138,14 @@ Required fixtures before hardware-only validation:
 
 ## Known Issues
 
-- Implementation has not started.
-- No local startup commands exist yet.
-- No backend, Android, fixture, hardware, or end-to-end validation evidence exists yet.
+- Android LiveKit/WebSocket wiring builds but still needs local manual validation
+  against a running LiveKit server and backend.
+- Android stores backend URL and local secret in Compose state only; encrypted
+  storage is still pending.
+- Android mocked UI/client tests are not implemented yet.
+- Real GoPro COHN control, `ffmpeg` sampler, Android authenticated JPEG display,
+  model, retrieval, safety, debug, hardware, and end-to-end validation have not
+  started.
 
 ## Stretch Work Parking Lot
 

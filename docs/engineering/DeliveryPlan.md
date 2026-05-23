@@ -2,7 +2,7 @@
 
 ## Status
 
-Current phase: Phase 0, Repository And Development Baseline.
+Current phase: Phase 2, GoPro And Frame Pipeline.
 
 Program objective: deliver an Android-first local MVP where an Android app authenticates to a Mac FastAPI backend, joins self-hosted LiveKit for audio, starts GoPro preview, displays sampled frames, supports push-to-talk visual Q&A, uses local/configured retrieval with citations, applies safety policy, and passes the documented release gates.
 
@@ -24,7 +24,7 @@ Program objective: deliver an Android-first local MVP where an Android app authe
 | --- | --- | --- |
 | Backend Control Plane Agent | FastAPI config, auth, sessions, LiveKit tokens, events, WebSocket, API contracts | Phase 0 and Phase 1 |
 | Android Client Agent | Android setup, active copilot UI, REST/WebSocket, LiveKit client, secure storage | Phase 0 and Phase 1 |
-| GoPro And Frame Pipeline Agent | GoPro service, COHN credentials, preview, sampler, frame cache, Look | Phase 2 preparation |
+| GoPro And Frame Pipeline Agent | GoPro service, COHN credentials, preview, sampler, frame cache, Look | Phase 2 |
 | Voice And Model Agent | LiveKit agent worker, STT/LLM/TTS providers, turn orchestration | Phase 1 skeleton and Phase 3 |
 | Retrieval, Safety, And Debug Agent | ingestion, retrieval, citations, safety, debug artifacts | Phase 4 and Phase 5 preparation |
 | QA, Release, And Integration Agent | fixture strategy, phase gates, validation, latency, demo, release readiness | All phases |
@@ -87,13 +87,13 @@ Work items:
 
 | ID | Task | Owner | Dependencies | Evidence required | Status |
 | --- | --- | --- | --- | --- | --- |
-| P1-01 | Finalize `/session/start`, `/session/end`, `/session/status`, and event envelope schemas | TPM with Backend and Android | P0-03 | contract reviewed in docs/tests before implementation | Pending Phase 0 |
-| P1-02 | Implement bearer auth for REST and WebSocket | Backend Control Plane | P0-02 | auth tests; no secret logging | Pending Phase 0 |
-| P1-03 | Implement in-memory session store and idle expiration | Backend Control Plane | P1-01 | lifecycle and expiration tests | Pending Phase 0 |
-| P1-04 | Implement LiveKit room naming/token issuance | Backend Control Plane | P1-03 | fake LiveKit token tests | Pending Phase 0 |
-| P1-05 | Implement bounded WebSocket event bus and reconnect snapshot | Backend Control Plane | P1-03 | WebSocket tests | Pending Phase 0 |
-| P1-06 | Add LiveKit agent worker skeleton that can join a room | Voice And Model | P1-04 | worker starts against local/fake LiveKit | Pending Phase 0 |
-| P1-07 | Wire Android setup/auth/session/LiveKit connection | Android Client | P1-01, P1-04 | mocked tests and local manual flow | Pending Phase 0 |
+| P1-01 | Finalize `/session/start`, `/session/end`, `/session/status`, and event envelope schemas | TPM with Backend and Android | P0-03 | contract reviewed in docs/tests before implementation | Implemented |
+| P1-02 | Implement bearer auth for REST and WebSocket | Backend Control Plane | P0-02 | auth tests; no secret logging | Implemented |
+| P1-03 | Implement in-memory session store and idle expiration | Backend Control Plane | P1-01 | lifecycle and expiration tests | Implemented |
+| P1-04 | Implement LiveKit room naming/token issuance | Backend Control Plane | P1-03 | fake LiveKit token tests | Implemented |
+| P1-05 | Implement bounded WebSocket event bus and reconnect snapshot | Backend Control Plane | P1-03 | WebSocket tests | Implemented |
+| P1-06 | Add LiveKit agent worker skeleton that can join a room | Voice And Model | P1-04 | worker starts against local/fake LiveKit | Worker entrypoint implemented; real room join pending Phase 3 |
+| P1-07 | Wire Android setup/auth/session/LiveKit connection | Android Client | P1-01, P1-04 | mocked tests and local manual flow | Implemented; local manual LiveKit validation pending |
 
 Integration checkpoint:
 
@@ -117,6 +117,24 @@ Key contracts to review before implementation:
 - `Frame` metadata, exact `frame_id` semantics, JPEG URL behavior, cache headers.
 - `frame.latest.updated` and `frame.pinned` event payloads.
 - Look TTL and question-time frame selection semantics.
+
+Implemented fixture-backed slice:
+
+- Authenticated `GET /gopro/status`, `POST /gopro/start-preview`, and
+  `POST /gopro/stop-preview`.
+- In-memory fixture frame store with stable `frame_id`, metadata, JPEG bytes,
+  stale-frame detection, and Look pinning.
+- Authenticated `GET /frame/latest`, `GET /frame/{frame_id}.jpg`, and
+  `POST /frame/look`.
+- Session-scoped `frame.latest.updated` and `frame.pinned` WebSocket events.
+- Android active screen can refresh latest frame metadata and trigger Look.
+
+Remaining Phase 2 work:
+
+- Real GoPro COHN credential reuse, preview start/stop, and reconfigure flow.
+- `ffmpeg` UDP frame sampler with 2 FPS cadence and restart/degraded handling.
+- Android image loading from `jpeg_url`, not just metadata display.
+- Local hardware validation of sampler failure and degraded state timing.
 
 Integration checkpoint:
 
@@ -239,20 +257,20 @@ Demo script:
 
 | Dependency | Needed by | Owner | Required by phase | Status |
 | --- | --- | --- | --- | --- |
-| Complete `.env.example` and typed settings | All backend agents, QA | Backend Control Plane | Phase 0 | Not started |
-| `/session/start` response contract | Android, Voice, QA | Backend Control Plane | Phase 1 | Not started |
-| WebSocket auth strategy | Android, Backend, QA | TPM decision with Backend/Android | Phase 1 | Open decision |
-| LiveKit room/session naming convention | Android, Voice, QA | Backend Control Plane | Phase 1 | Not started |
-| Event envelope and assistant state events | Android, Voice, Retrieval/Safety, QA | Backend Control Plane | Phase 1 | Not started |
-| Frame metadata and `frame_id` semantics | Voice, Android, QA | GoPro And Frame Pipeline | Phase 2 | Not started |
-| Fixture frame/video strategy | GoPro, Android, Voice, QA | QA, Release, And Integration | Phase 2 | Not started |
+| Complete `.env.example` and typed settings | All backend agents, QA | Backend Control Plane | Phase 0 | Complete |
+| `/session/start` response contract | Android, Voice, QA | Backend Control Plane | Phase 1 | Implemented |
+| WebSocket auth strategy | Android, Backend, QA | TPM decision with Backend/Android | Phase 1 | Bearer header for MVP |
+| LiveKit room/session naming convention | Android, Voice, QA | Backend Control Plane | Phase 1 | Implemented |
+| Event envelope and assistant state events | Android, Voice, Retrieval/Safety, QA | Backend Control Plane | Phase 1 | Implemented for session snapshots |
+| Frame metadata and `frame_id` semantics | Voice, Android, QA | GoPro And Frame Pipeline | Phase 2 | Implemented for fixture frames |
+| Fixture frame/video strategy | GoPro, Android, Voice, QA | QA, Release, And Integration | Phase 2 | Fixture JPEG path implemented; sampler fixture pending |
 | Push-to-talk implementation pattern | Android, Voice, QA | TPM decision with Voice/Android | Phase 3 | Open decision |
 | Retrieval result/citation schema | Voice, Android, QA | Retrieval, Safety, And Debug | Phase 4 | Not started |
 | Debug artifact redaction contract | Backend, Voice, Retrieval/Safety, QA | Retrieval, Safety, And Debug | Phase 5 | Not started |
 
 ## Immediate Next Actions
 
-1. Backend Control Plane Agent starts P0-01 through P0-03.
-2. Android Client Agent starts P0-04.
-3. QA, Release, And Integration Agent starts P0-05 and P0-06.
-4. TPM schedules Phase 1 contract review after Phase 0 skeletons exist.
+1. Add real GoPro service boundary for COHN credential reuse and preview state.
+2. Add `ffmpeg` sampler interface with fixture process tests.
+3. Add Android image loading from authenticated `jpeg_url`.
+4. Run local manual Phase 1 and Phase 2 checkpoints with LiveKit and hardware.

@@ -12,6 +12,8 @@ def test_settings_load_required_local_secret() -> None:
     assert settings.gopro_serial_suffix == "2312"
     assert settings.frame_sample_fps == 2
     assert settings.session_idle_timeout_seconds == 7200
+    assert settings.livekit_token_ttl_seconds == 3600
+    assert settings.websocket_queue_limit == 32
 
 
 def test_settings_require_local_secret() -> None:

@@ -108,9 +108,9 @@ settings storage, and Android tests are still pending.
 - [x] Retrieval debug artifacts save targeted session data.
 - [x] Post-model low-confidence procedural/tool instruction guard is active.
 - [x] Pre-model and post-model high-risk safety checks are active.
-- [ ] Debug mode endpoint requires auth.
+- [x] Debug artifact endpoints require auth.
 - [x] Debug artifacts save only targeted session data.
-- [ ] Redaction tests prove secrets are stripped.
+- [x] Redaction tests prove secrets are stripped.
 - [ ] Timing metrics exist for each turn stage.
 - [ ] Required Android UI states are reachable.
 - [ ] Scripted failure cases pass.

@@ -82,6 +82,25 @@ class PushToTalkReleaseResponse(BaseModel):
     safety_category: str = "none"
 
 
+class DebugArtifactSummaryResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    artifact: str
+    path: str
+
+
+class DebugArtifactListResponse(BaseModel):
+    artifact_count: int
+    artifacts: list[DebugArtifactSummaryResponse]
+
+
+class DebugArtifactResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    artifact: str
+    payload: dict
+
+
 class RetrievalSkippedResponse(BaseModel):
     source: str
     reason: str

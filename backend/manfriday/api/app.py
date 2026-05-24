@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse, Response
 
 from manfriday import __version__
 from manfriday.api.contracts import (
+    DebugArtifactListResponse,
+    DebugArtifactResponse,
     FrameMetadataResponse,
     FrameUnavailableResponse,
     GoProReconfigureRequest,
@@ -29,6 +31,7 @@ from manfriday.api.contracts import (
 )
 from manfriday.auth.dependencies import build_auth_dependency, websocket_authorized
 from manfriday.config.settings import Settings, get_settings
+from manfriday.debug_artifacts import list_debug_artifacts, load_debug_artifact
 from manfriday.events import EventBus, EventEnvelope
 from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
@@ -214,6 +217,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": __version__,
             "time": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
+
+    @app.get(
+        "/debug/artifacts",
+        response_model=DebugArtifactListResponse,
+        tags=["debug"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def debug_artifacts() -> DebugArtifactListResponse:
+        artifacts = list_debug_artifacts(app_settings.debug_artifacts_dir)
+        return DebugArtifactListResponse(
+            artifact_count=len(artifacts),
+            artifacts=[
+                {
+                    "session_id": artifact.session_id,
+                    "turn_id": artifact.turn_id,
+                    "artifact": artifact.artifact,
+                    "path": artifact.path,
+                }
+                for artifact in artifacts
+            ],
+        )
+
+    @app.get(
+        "/debug/artifacts/{session_id}/{turn_id}/{artifact}",
+        response_model=DebugArtifactResponse,
+        tags=["debug"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def debug_artifact(
+        session_id: str,
+        turn_id: str,
+        artifact: str,
+    ) -> DebugArtifactResponse:
+        payload = load_debug_artifact(
+            app_settings.debug_artifacts_dir,
+            session_id=session_id,
+            turn_id=turn_id,
+            artifact=artifact,
+        )
+        if payload is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+        return DebugArtifactResponse(
+            session_id=session_id,
+            turn_id=turn_id,
+            artifact=artifact,
+            payload=payload,
+        )
 
     @app.post(
         "/retrieval/ingest",

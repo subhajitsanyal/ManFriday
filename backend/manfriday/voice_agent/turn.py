@@ -1,4 +1,3 @@
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,6 +5,8 @@ from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
 
+from manfriday.config.settings import Settings
+from manfriday.debug_artifacts import write_debug_artifact
 from manfriday.events import EventBus, EventEnvelope
 from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
@@ -67,6 +68,7 @@ class VoiceTurnOrchestrator:
         event_bus: EventBus,
         retrieval_context_provider: RetrievalContextProvider | None = None,
         debug_artifacts_dir: Path | None = None,
+        debug_settings: Settings | None = None,
     ) -> None:
         self._stt_provider = stt_provider
         self._model_provider = model_provider
@@ -75,6 +77,7 @@ class VoiceTurnOrchestrator:
         self._event_bus = event_bus
         self._retrieval_context_provider = retrieval_context_provider
         self._debug_artifacts_dir = debug_artifacts_dir
+        self._debug_settings = debug_settings
 
     async def run_turn(
         self,
@@ -317,11 +320,13 @@ class VoiceTurnOrchestrator:
     ) -> None:
         if self._debug_artifacts_dir is None:
             return
-        artifact_dir = self._debug_artifacts_dir / session_id / turn_id
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        (artifact_dir / "retrieval.json").write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
+        write_debug_artifact(
+            root=self._debug_artifacts_dir,
+            session_id=session_id,
+            turn_id=turn_id,
+            artifact="retrieval.json",
+            payload=payload,
+            settings=self._debug_settings,
         )
 
     async def _publish(self, event_type: str, *, session_id: str, payload: dict) -> None:

@@ -360,6 +360,13 @@ Implemented slice:
   and session memory include safety action/category metadata when applicable.
 - Tests cover pre-model model bypass, post-model unsafe-output replacement,
   normal visual/retrieval flows, and API/transcript safety metadata.
+- Authenticated debug artifact endpoints list available JSON artifacts and
+  return individual artifact payloads from `DEBUG_ARTIFACTS_DIR`.
+- Shared debug redaction strips bearer tokens, API keys, AWS keys/session
+  tokens, LiveKit secrets, model credentials, and known settings secrets before
+  artifacts are written.
+- Redaction coverage proves secrets are removed from settings-derived values,
+  headers, prompt/query text, and retrieval source metadata.
 
 Integration checkpoint:
 

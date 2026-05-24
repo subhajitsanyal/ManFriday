@@ -52,6 +52,7 @@ class VoiceAgentWorker:
                 index_dir=self.settings.retrieval_index_dir,
             ),
             debug_artifacts_dir=self.settings.debug_artifacts_dir,
+            debug_settings=self.settings,
         )
 
     def build_turn_orchestrator(
@@ -106,6 +107,7 @@ class VoiceAgentWorker:
                 index_dir=self.settings.retrieval_index_dir,
             ),
             debug_artifacts_dir=self.settings.debug_artifacts_dir,
+            debug_settings=self.settings,
         )
 
     def build_bedrock_turn_orchestrator(
@@ -131,4 +133,5 @@ class VoiceAgentWorker:
                 index_dir=self.settings.retrieval_index_dir,
             ),
             debug_artifacts_dir=self.settings.debug_artifacts_dir,
+            debug_settings=self.settings,
         )

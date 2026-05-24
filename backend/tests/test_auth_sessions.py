@@ -314,6 +314,77 @@ def test_debug_session_writes_retrieval_artifact(tmp_path: Path) -> None:
     assert artifact["citations"][0]["source_uri"] == "notes.txt"
 
 
+def test_debug_artifact_endpoints_require_auth_and_return_redacted_payload(
+    tmp_path: Path,
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    secret_name = "sk-testsecret123456"
+    (docs / f"{secret_name}.txt").write_text(
+        "hex key is stored in the calibration drawer",
+        encoding="utf-8",
+    )
+    settings = _settings(
+        RETRIEVAL_LOCAL_DOCS_DIR=docs,
+        DEBUG_ARTIFACTS_DIR=tmp_path / "artifacts",
+        MANFRIDAY_LOCAL_SECRET="debug-secret",
+        LIVEKIT_API_KEY="livekit-key-secret",
+        LIVEKIT_API_SECRET="livekit-api-secret",
+        MODEL_API_KEY=secret_name,
+        AWS_ACCESS_KEY_ID="AKIAABCDEFGHIJKLMNOP",
+        AWS_SECRET_ACCESS_KEY="aws-secret-value",
+        AWS_SESSION_TOKEN="aws-session-token",
+        TAVILY_API_KEY="tavily-secret-value",
+    )
+    client = TestClient(create_app(settings))
+
+    assert client.get("/debug/artifacts").status_code == 401
+    headers = {"Authorization": "Bearer debug-secret"}
+    start = client.post(
+        "/session/start",
+        headers=headers,
+        json={"debug_enabled": True},
+    ).json()
+    client.post(
+        "/assistant/push-to-talk/start",
+        headers=headers,
+        json={"session_id": start["session_id"]},
+    )
+    released = client.post(
+        "/assistant/push-to-talk/release",
+        headers=headers,
+        json={
+            "session_id": start["session_id"],
+            "user_text": "Where is the hex key? Bearer debug-secret",
+        },
+    )
+
+    listing = client.get("/debug/artifacts", headers=headers)
+    lookup = client.get(
+        f"/debug/artifacts/{start['session_id']}/{released.json()['turn_id']}/retrieval.json",
+        headers=headers,
+    )
+
+    assert listing.status_code == 200
+    assert listing.json()["artifact_count"] == 1
+    assert listing.json()["artifacts"][0]["artifact"] == "retrieval.json"
+    assert lookup.status_code == 200
+    serialized_payload = json.dumps(lookup.json()["payload"])
+    for secret in (
+        "debug-secret",
+        "Bearer debug-secret",
+        secret_name,
+        "livekit-key-secret",
+        "livekit-api-secret",
+        "AKIAABCDEFGHIJKLMNOP",
+        "aws-secret-value",
+        "aws-session-token",
+        "tavily-secret-value",
+    ):
+        assert secret not in serialized_payload
+    assert "[REDACTED]" in serialized_payload
+
+
 def test_push_to_talk_release_without_speech_discards_turn() -> None:
     client = TestClient(create_app(_settings()))
     headers = _headers()

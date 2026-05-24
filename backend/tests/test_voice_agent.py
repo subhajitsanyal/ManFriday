@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from manfriday.api.app import create_app
 from manfriday.config.settings import Settings
 from manfriday.events import EventBus
 from manfriday.frames import FrameStore
@@ -215,6 +216,39 @@ def test_worker_builds_openai_orchestrator_from_config() -> None:
     assert isinstance(orchestrator, VoiceTurnOrchestrator)
 
 
+def test_worker_selects_mock_orchestrator_from_config() -> None:
+    worker = VoiceAgentWorker(
+        Settings(
+            MANFRIDAY_LOCAL_SECRET="test-secret",
+            MODEL_PROVIDER="mock",
+        ),
+    )
+
+    orchestrator = worker.build_turn_orchestrator(
+        frame_store=_frame_store(),
+        event_bus=EventBus(queue_limit=16),
+    )
+
+    assert isinstance(orchestrator._model_provider, MockVisionLanguageModel)
+
+
+def test_worker_selects_openai_orchestrator_from_config() -> None:
+    worker = VoiceAgentWorker(
+        Settings(
+            MANFRIDAY_LOCAL_SECRET="test-secret",
+            MODEL_PROVIDER="openai",
+            MODEL_API_KEY="test-openai-key",
+        ),
+    )
+
+    orchestrator = worker.build_turn_orchestrator(
+        frame_store=_frame_store(),
+        event_bus=EventBus(queue_limit=16),
+    )
+
+    assert isinstance(orchestrator._model_provider, OpenAIVisionLanguageModel)
+
+
 def test_openai_client_requires_model_api_key() -> None:
     settings = Settings(MANFRIDAY_LOCAL_SECRET="test-secret", MODEL_API_KEY=None)
 
@@ -284,6 +318,39 @@ def test_worker_builds_bedrock_orchestrator_from_config() -> None:
     )
 
     assert isinstance(orchestrator, VoiceTurnOrchestrator)
+
+
+def test_worker_selects_bedrock_orchestrator_from_config() -> None:
+    worker = VoiceAgentWorker(
+        Settings(
+            MANFRIDAY_LOCAL_SECRET="test-secret",
+            MODEL_PROVIDER="bedrock",
+            AWS_ACCESS_KEY_ID="test-access-key",
+            AWS_SECRET_ACCESS_KEY="test-secret-key",
+        ),
+    )
+
+    orchestrator = worker.build_turn_orchestrator(
+        frame_store=_frame_store(),
+        event_bus=EventBus(queue_limit=16),
+    )
+
+    assert isinstance(orchestrator._model_provider, BedrockClaudeModel)
+    assert isinstance(orchestrator._stt_provider, MockSpeechToTextProvider)
+    assert isinstance(orchestrator._tts_provider, MockTextToSpeechProvider)
+
+
+def test_create_app_selects_bedrock_orchestrator_from_config() -> None:
+    app = create_app(
+        Settings(
+            MANFRIDAY_LOCAL_SECRET="test-secret",
+            MODEL_PROVIDER="bedrock",
+            AWS_ACCESS_KEY_ID="test-access-key",
+            AWS_SECRET_ACCESS_KEY="test-secret-key",
+        ),
+    )
+
+    assert isinstance(app.state.voice_orchestrator._model_provider, BedrockClaudeModel)
 
 
 def test_bedrock_client_requires_aws_credentials() -> None:

@@ -209,6 +209,7 @@ def test_push_to_talk_release_without_speech_discards_turn() -> None:
 def _settings() -> Settings:
     return Settings(
         MANFRIDAY_LOCAL_SECRET="test-secret",
+        MODEL_PROVIDER="mock",
         LIVEKIT_URL="ws://livekit.test:7880",
         LIVEKIT_API_KEY="devkey",
         LIVEKIT_API_SECRET="devsecret",

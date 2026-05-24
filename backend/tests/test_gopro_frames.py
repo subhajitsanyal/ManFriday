@@ -271,7 +271,7 @@ def test_open_gopro_controller_detects_saved_credentials(tmp_path) -> None:
 
 
 def _settings(**overrides) -> Settings:
-    return Settings(MANFRIDAY_LOCAL_SECRET="test-secret", **overrides)
+    return Settings(MANFRIDAY_LOCAL_SECRET="test-secret", MODEL_PROVIDER="mock", **overrides)
 
 
 def _headers() -> dict[str, str]:

@@ -47,6 +47,29 @@ class VoiceAgentWorker:
             event_bus=event_bus,
         )
 
+    def build_turn_orchestrator(
+        self,
+        *,
+        frame_store: FrameStore,
+        event_bus: EventBus,
+    ) -> VoiceTurnOrchestrator:
+        match self.settings.model_provider:
+            case "mock":
+                return self.build_mock_turn_orchestrator(
+                    frame_store=frame_store,
+                    event_bus=event_bus,
+                )
+            case "openai":
+                return self.build_openai_turn_orchestrator(
+                    frame_store=frame_store,
+                    event_bus=event_bus,
+                )
+            case "bedrock":
+                return self.build_bedrock_turn_orchestrator(
+                    frame_store=frame_store,
+                    event_bus=event_bus,
+                )
+
     def build_openai_turn_orchestrator(
         self,
         *,

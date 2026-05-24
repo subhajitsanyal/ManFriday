@@ -145,7 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         controller=gopro_controller,
     )
     voice_worker = VoiceAgentWorker(settings=app_settings)
-    voice_orchestrator = voice_worker.build_mock_turn_orchestrator(
+    voice_orchestrator = voice_worker.build_turn_orchestrator(
         frame_store=frame_store,
         event_bus=event_bus,
     )

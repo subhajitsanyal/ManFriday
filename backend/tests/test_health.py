@@ -5,7 +5,7 @@ from manfriday.config.settings import Settings
 
 
 def test_health_is_unauthenticated() -> None:
-    app = create_app(Settings(MANFRIDAY_LOCAL_SECRET="test-secret"))
+    app = create_app(Settings(MANFRIDAY_LOCAL_SECRET="test-secret", MODEL_PROVIDER="mock"))
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200

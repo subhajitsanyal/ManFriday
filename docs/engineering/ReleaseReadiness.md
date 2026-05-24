@@ -7,14 +7,14 @@ Current phase: Phase 6, End-To-End MVP Validation.
 MVP readiness status: Not ready. Fixture-backed backend, retrieval, safety,
 debug, Android build gates, clean current-code backend startup, and real GoPro
 UDP frame sampling now pass. Local manual LiveKit/agent-worker validation,
-physical-device STT, session memory, latency report, and final end-to-end demo
-evidence are still pending.
+physical-device STT, latency report, and final end-to-end demo evidence are
+still pending.
 
 ## Gate Summary
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Passing: 118 tests, ruff, Phase 5 smoke |
+| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Passing: 121 tests, ruff, Phase 5 smoke |
 | Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Unit/build gate passing; encrypted settings storage remains hardening |
 | End-to-end gate | Android authenticates, joins LiveKit, starts session/GoPro, sees frames, asks spoken question, sees citations, safety constrains high-risk prompt, latency target met | Not started |
 | Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | External GoPro UDP stream sampled with ffmpeg; COHN reuse/reconfigure still pending |
@@ -123,7 +123,7 @@ evidence are still pending.
 - [ ] Android connects to backend and LiveKit.
 - [x] GoPro preview starts from Android.
 - [x] Visual Q&A works end to end.
-- [ ] Session memory supports follow-up.
+- [x] Session memory supports follow-up.
 - [x] Look pinned-frame semantics are verified.
 - [x] Retrieval citation is demonstrated.
 - [x] Safety warning/constrained response is demonstrated.
@@ -154,8 +154,12 @@ Validation notes:
   `/gopro/stop-preview` then `/gopro/start-preview`; `What do you see now?`
   returned `visual_status=healthy`, a frame reference, and
   `timing_ms.response_start=4950`.
-- 2026-05-24 follow-up memory did not pass: `What did I just ask about?`
-  returned an answer saying prior conversation history was unavailable.
+- 2026-05-24 follow-up memory initially did not pass: `What did I just ask
+  about?` returned an answer saying prior conversation history was unavailable.
+- 2026-05-24 session memory fix added bounded per-session recent turn context
+  to model prompts. Backend tests now prove a second turn asking `What did I
+  just ask about?` can answer from the prior user turn, and memory retains only
+  the six most recent turns.
 - 2026-05-24 retrieval citation passed: `Where is the hex key?` answered that
   the small hex key belongs with the camera mount, and Android rendered citation
   rows for `notes.txt` and `workbench_manual.md`.

@@ -15,6 +15,7 @@ from manfriday.voice_agent.openai_provider import (
 )
 from manfriday.voice_agent.providers import (
     AudioInput,
+    ConversationTurn,
     MockSpeechToTextProvider,
     MockTextToSpeechProvider,
     MockVisionLanguageModel,
@@ -43,6 +44,7 @@ __all__ = [
     "BedrockRuntimeClient",
     "ActivePushToTalkTurn",
     "BinaryResponse",
+    "ConversationTurn",
     "MockSpeechToTextProvider",
     "MockTextToSpeechProvider",
     "MockVisionLanguageModel",

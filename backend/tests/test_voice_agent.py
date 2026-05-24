@@ -18,6 +18,7 @@ from manfriday.voice_agent import (
     AudioInput,
     BedrockClaudeModel,
     BinaryResponse,
+    ConversationTurn,
     MockSpeechToTextProvider,
     MockTextToSpeechProvider,
     MockVisionLanguageModel,
@@ -96,6 +97,29 @@ def test_mock_turn_emits_transcript_response_events_and_updates_memory() -> None
             "citations": [],
         },
     ]
+
+
+def test_follow_up_turn_receives_recent_session_memory() -> None:
+    result, events, memory = asyncio.run(_run_two_turn_memory_check())
+
+    assert result.assistant_text == "You just asked about: Where is the hex key?"
+    assert len(memory["turns"]) == 2
+    assert memory["turns"][0]["user_text"] == "Where is the hex key?"
+    assert memory["turns"][1]["user_text"] == "What did I just ask about?"
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["text"] == result.assistant_text
+
+
+def test_session_memory_keeps_recent_turns_bounded() -> None:
+    _, _, memory = asyncio.run(_run_many_turns_for_memory_cap())
+
+    assert len(memory["turns"]) == 6
+    assert memory["turns"][0]["user_text"] == "Question 2"
+    assert memory["turns"][-1]["user_text"] == "Question 7"
 
 
 def test_mock_turn_prefers_pinned_frame_over_latest_frame() -> None:
@@ -370,7 +394,37 @@ def test_openai_model_provider_uses_responses_api_and_extracts_text() -> None:
     assert client.json_requests[0]["path"] == "/responses"
     assert client.json_requests[0]["payload"]["model"] == "gpt-4.1-mini"
     assert "frame_123" in client.json_requests[0]["payload"]["input"]
+    assert "Recent conversation: none." in client.json_requests[0]["payload"]["input"]
     assert "What is this part?" in client.json_requests[0]["payload"]["input"]
+
+
+def test_openai_prompt_includes_recent_conversation_context() -> None:
+    client = FakeOpenAIClient()
+    provider = OpenAIVisionLanguageModel(client=client, model="gpt-4.1-mini")
+
+    provider.complete_turn(
+        ModelTurnRequest(
+            turn_id="turn_test",
+            session_id="sess_test",
+            user_text="What did I just ask about?",
+            frame_id=None,
+            visual_status="degraded",
+            conversation_context=(
+                ConversationTurn(
+                    turn_id="turn_previous",
+                    user_text="Where is the hex key?",
+                    assistant_text="The hex key is beside the camera mount.",
+                    frame_id="frame_123",
+                ),
+            ),
+        ),
+    )
+
+    prompt = client.json_requests[0]["payload"]["input"]
+    assert "Recent conversation:" in prompt
+    assert "User [frame: frame_123]: Where is the hex key?" in prompt
+    assert "Assistant: The hex key is beside the camera mount." in prompt
+    assert "User question: What did I just ask about?" in prompt
 
 
 def test_openai_tts_provider_posts_speech_request() -> None:
@@ -489,7 +543,8 @@ def test_bedrock_claude_model_invokes_anthropic_messages_payload() -> None:
                                 "text": (
                                     "Answer the user's question using the visual context when "
                                     "available.\n\nVisual status: healthy\nSelected frame ID: "
-                                    "frame_123.\nRetrieved context: none.\nUser question: "
+                                    "frame_123.\nRecent conversation: none.\n"
+                                    "Retrieved context: none.\nUser question: "
                                     "What is this part?"
                                 ),
                             },
@@ -714,6 +769,61 @@ async def _run_turn_with_fixture_frame():
     return await _run_turn(frame_store=frame_store)
 
 
+async def _run_two_turn_memory_check():
+    frame_store = _frame_store()
+    frame_store.seed_fixture_frame()
+    session_id = "sess_memory"
+    memory: dict = {}
+    event_bus = EventBus(queue_limit=32)
+    queue = event_bus.subscribe(session_id)
+    orchestrator = VoiceTurnOrchestrator(
+        stt_provider=MockSpeechToTextProvider(),
+        model_provider=MemoryAwareModelProvider(),
+        tts_provider=MockTextToSpeechProvider(),
+        frame_store=frame_store,
+        event_bus=event_bus,
+    )
+    await orchestrator.run_turn(
+        session_id=session_id,
+        user_text="Where is the hex key?",
+        session_memory=memory,
+        synthesize_audio=False,
+    )
+    _drain_events(queue)
+    result = await orchestrator.run_turn(
+        session_id=session_id,
+        user_text="What did I just ask about?",
+        session_memory=memory,
+        synthesize_audio=False,
+    )
+    return result, _drain_events(queue), memory
+
+
+async def _run_many_turns_for_memory_cap():
+    frame_store = _frame_store()
+    frame_store.seed_fixture_frame()
+    session_id = "sess_memory"
+    memory: dict = {}
+    event_bus = EventBus(queue_limit=128)
+    queue = event_bus.subscribe(session_id)
+    orchestrator = VoiceTurnOrchestrator(
+        stt_provider=MockSpeechToTextProvider(),
+        model_provider=CapturingModelProvider(),
+        tts_provider=MockTextToSpeechProvider(),
+        frame_store=frame_store,
+        event_bus=event_bus,
+    )
+    result = None
+    for index in range(8):
+        result = await orchestrator.run_turn(
+            session_id=session_id,
+            user_text=f"Question {index}",
+            session_memory=memory,
+            synthesize_audio=False,
+        )
+    return result, _drain_events(queue), memory
+
+
 async def _run_turn(
     *,
     frame_store: FrameStore,
@@ -890,6 +1000,14 @@ class CapturingModelProvider:
     def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
         self.requests.append(request)
         return ModelTurnResponse(text="captured response")
+
+
+class MemoryAwareModelProvider:
+    def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
+        if request.user_text == "What did I just ask about?" and request.conversation_context:
+            previous = request.conversation_context[-1]
+            return ModelTurnResponse(text=f"You just asked about: {previous.user_text}")
+        return ModelTurnResponse(text=f"Answering: {request.user_text}")
 
 
 class ProceduralInstructionModelProvider:

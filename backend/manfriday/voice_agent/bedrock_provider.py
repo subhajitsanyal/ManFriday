@@ -211,13 +211,27 @@ def _model_prompt(request_model: ModelTurnRequest) -> str:
         else "No fresh visual frame is available."
     )
     retrieval_context = _retrieval_prompt(request_model)
+    conversation_context = _conversation_prompt(request_model)
     return (
         "Answer the user's question using the visual context when available.\n\n"
         f"Visual status: {request_model.visual_status}\n"
         f"{frame_context}\n"
+        f"{conversation_context}"
         f"{retrieval_context}"
         f"User question: {request_model.user_text}"
     )
+
+
+def _conversation_prompt(request_model: ModelTurnRequest) -> str:
+    if not request_model.conversation_context:
+        return "Recent conversation: none.\n"
+    lines = ["Recent conversation:"]
+    for index, turn in enumerate(request_model.conversation_context, start=1):
+        frame = f" [frame: {turn.frame_id}]" if turn.frame_id else ""
+        lines.append(f"{index}. User{frame}: {turn.user_text}")
+        lines.append(f"   Assistant: {turn.assistant_text}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _retrieval_prompt(request_model: ModelTurnRequest) -> str:

@@ -13,6 +13,7 @@ from manfriday.frames.models import FrameMetadata
 from manfriday.retrieval import Citation, RetrievalContext
 from manfriday.voice_agent.providers import (
     AudioInput,
+    ConversationTurn,
     ModelTurnRequest,
     ModelTurnResponse,
     SpeechToTextProvider,
@@ -21,6 +22,9 @@ from manfriday.voice_agent.providers import (
     Transcript,
     VisionLanguageModel,
 )
+
+MAX_SESSION_MEMORY_TURNS = 6
+MAX_MEMORY_TEXT_CHARS = 600
 
 
 @dataclass(frozen=True)
@@ -136,6 +140,7 @@ class VoiceTurnOrchestrator:
         frame_id = frame.frame_id if frame else None
         visual_context = "frame" if frame else "unavailable"
         visual_status = "healthy" if frame else "degraded"
+        conversation_context = _recent_conversation_context(session_memory)
         retrieval_start = perf_counter()
         retrieval_context = self._build_retrieval_context(transcript.text)
         timings["retrieval"] = self._elapsed_ms(retrieval_start)
@@ -174,6 +179,7 @@ class VoiceTurnOrchestrator:
                         user_text=transcript.text,
                         frame_id=frame_id,
                         visual_status=visual_status,
+                        conversation_context=conversation_context,
                         retrieval_context=retrieval_context,
                     ),
                 )
@@ -286,7 +292,9 @@ class VoiceTurnOrchestrator:
                 memory_turn["safety_category"] = safety.category
             if debug_enabled:
                 memory_turn["retrieval_debug"] = retrieval_debug
-            session_memory.setdefault("turns", []).append(memory_turn)
+            turns = session_memory.setdefault("turns", [])
+            turns.append(memory_turn)
+            del turns[:-MAX_SESSION_MEMORY_TURNS]
         if debug_enabled:
             self._write_retrieval_debug_artifact(
                 session_id=session_id,
@@ -431,6 +439,38 @@ def _retrieval_debug_payload(context: RetrievalContext | None) -> dict:
         ],
         "citations": [_citation_payload(citation) for citation in context.citations],
     }
+
+
+def _recent_conversation_context(session_memory: dict | None) -> tuple[ConversationTurn, ...]:
+    if session_memory is None:
+        return ()
+    turns = session_memory.get("turns")
+    if not isinstance(turns, list):
+        return ()
+    context: list[ConversationTurn] = []
+    for turn in turns[-MAX_SESSION_MEMORY_TURNS:]:
+        if not isinstance(turn, dict):
+            continue
+        user_text = _memory_text(turn.get("user_text"))
+        assistant_text = _memory_text(turn.get("assistant_text"))
+        if not user_text and not assistant_text:
+            continue
+        frame_id = turn.get("frame_id")
+        context.append(
+            ConversationTurn(
+                turn_id=str(turn.get("turn_id") or ""),
+                user_text=user_text,
+                assistant_text=assistant_text,
+                frame_id=frame_id if isinstance(frame_id, str) and frame_id else None,
+            ),
+        )
+    return tuple(context)
+
+
+def _memory_text(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:MAX_MEMORY_TEXT_CHARS]
 
 
 def _apply_post_model_safety(

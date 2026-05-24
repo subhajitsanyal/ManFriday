@@ -16,12 +16,21 @@ class Transcript:
 
 
 @dataclass(frozen=True)
+class ConversationTurn:
+    turn_id: str
+    user_text: str
+    assistant_text: str
+    frame_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ModelTurnRequest:
     turn_id: str
     session_id: str
     user_text: str
     frame_id: str | None
     visual_status: str
+    conversation_context: tuple[ConversationTurn, ...] = ()
     retrieval_context: RetrievalContext | None = None
 
 

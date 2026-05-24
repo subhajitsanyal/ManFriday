@@ -10,6 +10,7 @@ from manfriday.config.settings import Settings
 from tests.test_retrieval_url_ingestion import _fixture_server
 
 FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
+PDF_FIXTURES = Path(__file__).parent / "fixtures" / "retrieval_pdf"
 
 
 def test_retrieval_ingest_requires_bearer_auth() -> None:
@@ -182,6 +183,22 @@ def test_retrieval_query_returns_configured_url_chunks(tmp_path: Path) -> None:
     assert result["source_type"] == "configured_url"
     assert result["source_title"] == "Manufacturer Torque Guide"
     assert "4 Nm" in result["text"]
+
+
+def test_retrieval_query_returns_pdf_page_metadata() -> None:
+    client = TestClient(create_app(_settings(RETRIEVAL_LOCAL_DOCS_DIR=PDF_FIXTURES)))
+
+    response = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "4 Nm", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["source_uri"] == "camera_mount_manual.pdf"
+    assert result["page"] == 2
+    assert result["text"] == "Tighten the mount screw to 4 Nm on page two"
 
 
 def test_manfriday_ingest_cli_outputs_summary(capsys, monkeypatch) -> None:

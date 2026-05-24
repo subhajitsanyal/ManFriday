@@ -5,6 +5,7 @@ from pathlib import Path
 from manfriday.retrieval import LocalDocumentIngestor, SourceMetadata, ingest_local_documents
 
 FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
+PDF_FIXTURES = Path(__file__).parent / "fixtures" / "retrieval_pdf"
 NOW = datetime(2026, 5, 24, 3, 0, tzinfo=UTC)
 
 
@@ -84,6 +85,55 @@ def test_ingestion_skips_file_that_exceeds_size_limit() -> None:
     assert ("workbench_manual.md", "file_too_large") in {
         (item.source, item.reason) for item in summary.skipped
     }
+
+
+def test_pdf_ingestion_extracts_page_text_and_page_metadata() -> None:
+    summary = LocalDocumentIngestor(now_fn=lambda: NOW).ingest_directory(PDF_FIXTURES)
+
+    assert summary.status == "completed"
+    assert summary.local_files_indexed == 1
+    assert summary.failed == ()
+    source = summary.sources[0]
+    assert source.title == "camera mount manual"
+    assert source.uri == "camera_mount_manual.pdf"
+    assert source.manufacturer_or_manual is True
+    assert [chunk.page for chunk in summary.chunks] == [1, 2]
+    assert summary.chunks[0].text == "PDF camera mount manual page one"
+    assert summary.chunks[1].text == "Tighten the mount screw to 4 Nm on page two"
+
+
+def test_pdf_ingestion_skips_pdf_that_exceeds_page_limit() -> None:
+    summary = LocalDocumentIngestor(max_pdf_pages=1, now_fn=lambda: NOW).ingest_directory(
+        PDF_FIXTURES,
+    )
+
+    assert summary.local_files_indexed == 0
+    assert [(item.source, item.reason) for item in summary.skipped] == [
+        ("camera_mount_manual.pdf", "pdf_page_limit_exceeded"),
+    ]
+
+
+def test_pdf_ingestion_skips_pdf_that_exceeds_size_limit() -> None:
+    summary = LocalDocumentIngestor(max_file_size_bytes=10, now_fn=lambda: NOW).ingest_directory(
+        PDF_FIXTURES,
+    )
+
+    assert summary.local_files_indexed == 0
+    assert [(item.source, item.reason) for item in summary.skipped] == [
+        ("camera_mount_manual.pdf", "file_too_large"),
+    ]
+
+
+def test_pdf_ingestion_reports_extraction_failure(tmp_path: Path) -> None:
+    (tmp_path / "broken.pdf").write_bytes(b"%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n")
+
+    summary = LocalDocumentIngestor(now_fn=lambda: NOW).ingest_directory(tmp_path)
+
+    assert summary.status == "completed_with_errors"
+    assert summary.local_files_indexed == 0
+    assert [(item.source, item.reason) for item in summary.failed] == [
+        ("broken.pdf", "pdf_extract_failed"),
+    ]
 
 
 def test_ingest_local_documents_helper_uses_default_ingestor() -> None:

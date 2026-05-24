@@ -249,6 +249,8 @@ Implemented slice:
 - Configured URL ingestion from `RETRIEVAL_ONLINE_SOURCES_PATH` with a
   dependency-light trusted-source YAML reader, stdlib HTTP fetcher, timeout,
   max-size and content-type checks, and per-source failure reporting.
+- Local PDF ingestion with file-size and page-count limits, page-aware chunk
+  metadata, extraction-failure reporting, and query response page metadata.
 - Local and configured URL sources are merged for `manfriday ingest`,
   `POST /retrieval/ingest`, `POST /retrieval/query`, and voice retrieval
   context.
@@ -268,6 +270,8 @@ Implemented slice:
   citation display labels.
 - Configured URL coverage uses a local fixture HTTP server to validate indexed
   URL counts, failures, CLI/API summaries, and URL-ranked query results.
+- PDF coverage validates page text extraction, page metadata, page-limit skips,
+  size-limit skips, extraction failures, and PDF-ranked query results.
 
 Integration checkpoint:
 

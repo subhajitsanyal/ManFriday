@@ -125,6 +125,7 @@ class RetrievalChunkResponse(BaseModel):
     source_uri: str
     manufacturer_or_manual: bool
     chunk_index: int
+    page: int | None
     section: str | None
     text: str
     score: float

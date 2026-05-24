@@ -249,6 +249,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "source_uri": result.source.uri,
                     "manufacturer_or_manual": result.source.manufacturer_or_manual,
                     "chunk_index": result.chunk.chunk_index,
+                    "page": result.chunk.page,
                     "section": result.chunk.section,
                     "text": result.chunk.text,
                     "score": result.score,

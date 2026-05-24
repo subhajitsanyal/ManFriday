@@ -248,6 +248,8 @@ Implemented slice:
   model prompts.
 - Assistant transcript events, push-to-talk API responses, and session memory
   now include citation references when retrieval context is used.
+- Android parses citation arrays from transcript events and renders compact
+  citation rows under assistant messages using source title, URI, and section.
 - Fixture coverage for local `.md`, `.txt`, unsupported files, size-limit skips,
   stable IDs, source metadata, and chunk metadata.
 - Query coverage for keyword matching, section matching, stable ordering,
@@ -256,6 +258,8 @@ Implemented slice:
 - Voice turn coverage proves retrieved chunks are included in model prompts,
   citations carry URI/title/section metadata, and no-result retrieval does not
   block answers.
+- Android unit coverage verifies citation parsing from transcript events and
+  citation display labels.
 
 Integration checkpoint:
 

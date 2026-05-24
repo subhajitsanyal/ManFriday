@@ -66,6 +66,7 @@ import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -693,6 +694,31 @@ private fun TranscriptLine(entry: TranscriptEntry) {
         } else if (entry.visualContext == "unavailable" || entry.visualStatus == "degraded") {
             Text("Visual context unavailable", style = MaterialTheme.typography.bodySmall)
         }
+        if (entry.role == "assistant" && entry.citations.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                entry.citations.forEach { citation ->
+                    CitationRow(citation)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CitationRow(citation: CitationReference) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Text(citation.displayTitle(), style = MaterialTheme.typography.labelMedium)
+            Text(citation.sourceUri, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -753,15 +779,31 @@ private data class PushToTalkReleaseResponse(
     val turnId: String,
     val status: String,
     val assistantText: String?,
+    val citations: List<CitationReference> = emptyList(),
 )
 
-private data class TranscriptEntry(
+data class CitationReference(
+    val citationId: String,
+    val sourceTitle: String,
+    val sourceUri: String,
+    val section: String?,
+) {
+    fun displayTitle(): String {
+        return listOfNotNull(
+            sourceTitle.takeIf { it.isNotBlank() },
+            section?.takeIf { it.isNotBlank() },
+        ).joinToString(" | ").ifBlank { sourceUri }
+    }
+}
+
+data class TranscriptEntry(
     val turnId: String,
     val role: String,
     val text: String,
     val frameId: String?,
     val visualContext: String?,
     val visualStatus: String?,
+    val citations: List<CitationReference> = emptyList(),
 )
 
 private data class FrameMetadata(
@@ -885,6 +927,7 @@ private object ManFridayBackendClient {
             turnId = json.getString("turn_id"),
             status = json.getString("status"),
             assistantText = json.optNullableString("assistant_text"),
+            citations = json.optCitationReferences(),
         )
     }
 
@@ -1096,7 +1139,7 @@ private fun startEventClient(
     return client
 }
 
-private fun handleAssistantEvent(
+fun handleAssistantEvent(
     type: String,
     payload: JSONObject?,
     onAssistantStatus: (String) -> Unit,
@@ -1129,6 +1172,7 @@ private fun handleAssistantEvent(
                         frameId = payload.optNullableString("frame_id"),
                         visualContext = payload.optNullableString("visual_context"),
                         visualStatus = payload.optNullableString("visual_status"),
+                        citations = payload.optCitationReferences(),
                     ),
                 )
                 if (role == "assistant" && payload.optBoolean("is_final", false)) {
@@ -1144,4 +1188,25 @@ private fun JSONObject.optNullableString(key: String): String? {
         return null
     }
     return optString(key).takeIf { it.isNotBlank() }
+}
+
+fun JSONObject.optCitationReferences(key: String = "citations"): List<CitationReference> {
+    val citations = optJSONArray(key) ?: return emptyList()
+    return citations.toCitationReferences()
+}
+
+private fun JSONArray.toCitationReferences(): List<CitationReference> {
+    return (0 until length()).mapNotNull { index ->
+        optJSONObject(index)?.toCitationReference()
+    }
+}
+
+private fun JSONObject.toCitationReference(): CitationReference {
+    val sourceUri = optString("source_uri").takeIf { it.isNotBlank() }.orEmpty()
+    return CitationReference(
+        citationId = optString("citation_id").takeIf { it.isNotBlank() }.orEmpty(),
+        sourceTitle = optString("source_title").takeIf { it.isNotBlank() } ?: sourceUri,
+        sourceUri = sourceUri,
+        section = optNullableString("section"),
+    )
 }

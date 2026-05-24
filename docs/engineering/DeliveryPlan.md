@@ -174,7 +174,8 @@ Implemented mock-backed slice:
 - OpenAI-backed STT, Responses API model, and TTS provider adapters behind
   config, with fake-client tests for request shape and response parsing.
 - AWS Bedrock Claude Messages adapter behind config, with native SigV4 request
-  signing, Sonnet 4.5 as the default model ID, and fake-client tests for
+  signing, Sonnet 4.5 as the default inference profile ID, shared AWS
+  credentials profile fallback, live smoke validation, and fake-client tests for
   Anthropic Messages payload shape and response parsing.
 - `VoiceTurnOrchestrator` with stable `turn_id`, pinned-frame-first selection,
   no-fresh-frame degraded context, assistant state events, transcript events,
@@ -192,8 +193,6 @@ Implemented mock-backed slice:
 
 Remaining Phase 3 work:
 
-- Live AWS Bedrock Claude validation with AWS credentials, model access, and
-  selected Sonnet/Haiku model ID.
 - Latency measurement against the target response-start budget.
 - Revisit LiveKit audio capture/playback only if Android-native STT/TTS does not
   meet latency or reliability targets.

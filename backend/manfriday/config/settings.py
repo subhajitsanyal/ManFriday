@@ -31,11 +31,12 @@ class Settings(BaseSettings):
     model_base_url: str | None = Field(default=None, alias="MODEL_BASE_URL")
     model_api_key: SecretStr | None = Field(default=None, alias="MODEL_API_KEY")
     model_name: str = Field(
-        default="anthropic.claude-sonnet-4-5-20250929-v1:0",
+        default="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         alias="MODEL_NAME",
     )
     bedrock_max_tokens: int = Field(default=1024, alias="BEDROCK_MAX_TOKENS")
     aws_region: str = Field(default="us-east-1", alias="AWS_REGION")
+    aws_profile: str | None = Field(default=None, alias="AWS_PROFILE")
     aws_access_key_id: SecretStr | None = Field(default=None, alias="AWS_ACCESS_KEY_ID")
     aws_secret_access_key: SecretStr | None = Field(default=None, alias="AWS_SECRET_ACCESS_KEY")
     aws_session_token: SecretStr | None = Field(default=None, alias="AWS_SESSION_TOKEN")

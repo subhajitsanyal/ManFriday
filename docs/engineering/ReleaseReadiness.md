@@ -62,7 +62,7 @@ settings storage, and Android tests are still pending.
 - [x] Mock provider orchestration tests pass.
 - [x] OpenAI-backed provider adapters are implemented behind config.
 - [x] AWS Bedrock Claude provider adapter is implemented behind config.
-- [ ] Live AWS Bedrock Claude provider path is validated with real credentials.
+- [x] Live AWS Bedrock Claude provider path is validated with shared AWS credentials.
 - [x] Final STT/TTS provider path is selected for MVP as Android-native STT/TTS.
 - [x] Backend push-to-talk enforces button down/up and 20-second max recording duration.
 - [x] Backend release-before-speech discards turn.

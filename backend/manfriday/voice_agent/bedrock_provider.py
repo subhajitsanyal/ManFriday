@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from configparser import ConfigParser
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 from urllib import parse, request
 from urllib.error import HTTPError
@@ -46,9 +48,10 @@ class BedrockRuntimeClient:
         body = json.dumps(payload).encode("utf-8")
         now = datetime.now(UTC)
         path = f"/model/{parse.quote(model_id, safe='')}/invoke"
+        canonical_path = parse.quote(path, safe="/")
         headers = self._signed_headers(
             method="POST",
-            path=path,
+            canonical_path=canonical_path,
             body=body,
             now=now,
             extra_headers={
@@ -73,7 +76,7 @@ class BedrockRuntimeClient:
         self,
         *,
         method: str,
-        path: str,
+        canonical_path: str,
         body: bytes,
         now: datetime,
         extra_headers: dict[str, str],
@@ -98,7 +101,7 @@ class BedrockRuntimeClient:
         canonical_request = "\n".join(
             [
                 method,
-                path,
+                canonical_path,
                 "",
                 canonical_headers,
                 signed_headers,
@@ -158,15 +161,46 @@ class BedrockClaudeModel:
 
 
 def build_bedrock_client(settings: Settings) -> BedrockRuntimeClient:
-    if settings.aws_access_key_id is None or settings.aws_secret_access_key is None:
-        raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for Bedrock.")
+    credentials = _resolve_aws_credentials(settings)
     return BedrockRuntimeClient(
-        credentials=AwsCredentials(
+        credentials=credentials,
+        region=settings.aws_region,
+    )
+
+
+def _resolve_aws_credentials(settings: Settings) -> AwsCredentials:
+    if settings.aws_profile:
+        return _load_shared_credentials(settings.aws_profile)
+    if settings.aws_access_key_id is not None and settings.aws_secret_access_key is not None:
+        return AwsCredentials(
             access_key_id=settings.aws_access_key_id,
             secret_access_key=settings.aws_secret_access_key,
             session_token=settings.aws_session_token,
-        ),
-        region=settings.aws_region,
+        )
+    return _load_shared_credentials("default")
+
+
+def _load_shared_credentials(profile: str) -> AwsCredentials:
+    credentials_path = Path.home() / ".aws" / "credentials"
+    parser = ConfigParser()
+    parser.read(credentials_path)
+    if not parser.has_section(profile):
+        raise ValueError(
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for Bedrock, "
+            f"or configure profile '{profile}' in ~/.aws/credentials.",
+        )
+    access_key_id = parser.get(profile, "aws_access_key_id", fallback="").strip()
+    secret_access_key = parser.get(profile, "aws_secret_access_key", fallback="").strip()
+    session_token = parser.get(profile, "aws_session_token", fallback="").strip()
+    if not access_key_id or not secret_access_key:
+        raise ValueError(
+            f"AWS profile '{profile}' in ~/.aws/credentials must include "
+            "aws_access_key_id and aws_secret_access_key.",
+        )
+    return AwsCredentials(
+        access_key_id=SecretStr(access_key_id),
+        secret_access_key=SecretStr(secret_access_key),
+        session_token=SecretStr(session_token) if session_token else None,
     )
 
 

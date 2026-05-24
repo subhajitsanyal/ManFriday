@@ -353,7 +353,35 @@ def test_create_app_selects_bedrock_orchestrator_from_config() -> None:
     assert isinstance(app.state.voice_orchestrator._model_provider, BedrockClaudeModel)
 
 
-def test_bedrock_client_requires_aws_credentials() -> None:
+def test_bedrock_client_loads_shared_credentials_profile(tmp_path, monkeypatch) -> None:
+    aws_dir = tmp_path / ".aws"
+    aws_dir.mkdir()
+    (aws_dir / "credentials").write_text(
+        "[work]\n"
+        "aws_access_key_id = profile-access-key\n"
+        "aws_secret_access_key = profile-secret-key\n"
+        "aws_session_token = profile-session-token\n",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    client = build_bedrock_client(
+        Settings(
+            MANFRIDAY_LOCAL_SECRET="test-secret",
+            MODEL_PROVIDER="bedrock",
+            AWS_PROFILE="work",
+            AWS_ACCESS_KEY_ID=None,
+            AWS_SECRET_ACCESS_KEY=None,
+        ),
+    )
+
+    assert client._credentials.access_key_id.get_secret_value() == "profile-access-key"
+    assert client._credentials.secret_access_key.get_secret_value() == "profile-secret-key"
+    assert client._credentials.session_token is not None
+    assert client._credentials.session_token.get_secret_value() == "profile-session-token"
+
+
+def test_bedrock_client_requires_aws_credentials(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     settings = Settings(
         MANFRIDAY_LOCAL_SECRET="test-secret",
         MODEL_PROVIDER="bedrock",

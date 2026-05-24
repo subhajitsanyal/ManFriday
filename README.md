@@ -47,13 +47,14 @@ mock STT/LLM/TTS turn orchestrator. The mock path emits assistant state,
 transcript, response, and error events with selected frame references. OpenAI
 STT, Responses API model, and TTS adapters are implemented behind config with
 fake-client tests. The default LLM provider has switched to AWS Bedrock Claude
-with a native SigV4-signed adapter and Sonnet 4.5 default model ID. Authenticated
+with a native SigV4-signed adapter and Sonnet 4.5 default inference profile ID. Authenticated
 backend push-to-talk start/release endpoints now drive the mock turn lifecycle
 and enforce the 20-second recording limit. Android Hold to Talk calls those
 endpoints, uses Android-native speech recognition to send recognized text to
 the backend, renders transcript events with frame references, and speaks final
-assistant replies with Android-native TTS. Live Bedrock validation and latency
-measurement remain next.
+assistant replies with Android-native TTS. A live Bedrock smoke call has passed
+with the default shared AWS credentials profile; latency measurement remains
+next.
 
 ## Backend Local Development
 

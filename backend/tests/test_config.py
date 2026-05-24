@@ -5,12 +5,12 @@ from manfriday.config.settings import Settings
 
 
 def test_settings_load_required_local_secret() -> None:
-    settings = Settings(MANFRIDAY_LOCAL_SECRET="test-secret")
+    settings = Settings(_env_file=None, MANFRIDAY_LOCAL_SECRET="test-secret")
 
     assert settings.local_secret.get_secret_value() == "test-secret"
     assert settings.livekit_url == "ws://localhost:7880"
     assert settings.model_provider == "bedrock"
-    assert settings.model_name == "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    assert settings.model_name == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     assert settings.aws_region == "us-east-1"
     assert settings.gopro_serial_suffix == "2312"
     assert settings.gopro_controller == "fixture"

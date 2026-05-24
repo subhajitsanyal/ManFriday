@@ -112,7 +112,7 @@ settings storage, and Android tests are still pending.
 - [x] Debug artifacts save only targeted session data.
 - [x] Redaction tests prove secrets are stripped.
 - [x] Timing metrics exist for each turn stage.
-- [ ] Required Android UI states are reachable.
+- [x] Required Android UI states are reachable in tests/mocks.
 - [ ] Scripted failure cases pass.
 
 ### Phase 6

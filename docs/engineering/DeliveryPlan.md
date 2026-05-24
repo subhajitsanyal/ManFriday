@@ -373,6 +373,11 @@ Implemented slice:
   WebSocket disconnect, stale-frame degraded visual responses, GoPro unavailable
   and sampler-failure states, model timeout/failure handling, and retrieval
   low-confidence behavior.
+- Android now parses assistant safety action/category and turn timing metadata,
+  renders safety and timing details under assistant transcript rows, and exposes
+  normalized UI states for backend unavailable, LiveKit unavailable, GoPro
+  unavailable, visual degraded/unavailable, listening, thinking, speaking,
+  safety constrained, low confidence, and error paths.
 
 Integration checkpoint:
 

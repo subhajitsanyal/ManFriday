@@ -163,7 +163,11 @@ fun ManFridayApp() {
                                 hasSpeech = hasSpeech,
                             )
                         }.onSuccess {
-                            assistantStatus = it.status.replaceFirstChar { char -> char.uppercase() }
+                            assistantStatus = if (it.safetyAction != "none") {
+                                "Safety constrained"
+                            } else {
+                                it.status.replaceFirstChar { char -> char.uppercase() }
+                            }
                             lastEvent = "assistant.push_to_talk.${it.status}"
                         }.onFailure {
                             assistantStatus = it.message ?: "Release failed"
@@ -557,14 +561,14 @@ private fun ActiveCopilotScreen(
                 }
             }
 
-            StatusLine(label = "Backend", value = "Connected")
+            StatusLine(label = "Backend", value = backendUiState(webSocketStatus))
             StatusLine(label = "Session", value = session.sessionId)
-            StatusLine(label = "LiveKit", value = "$liveKitStatus: ${session.livekitRoom}")
+            StatusLine(label = "LiveKit", value = "${liveKitUiState(liveKitStatus)}: ${session.livekitRoom}")
             StatusLine(label = "Events", value = webSocketStatus)
             StatusLine(label = "Last event", value = lastEvent)
             StatusLine(label = "Assistant", value = assistantStatus)
-            StatusLine(label = "GoPro", value = "Pending")
-            StatusLine(label = "Visual", value = frameStatus)
+            StatusLine(label = "GoPro", value = goproUiState(frameStatus))
+            StatusLine(label = "Visual", value = visualUiState(frameStatus))
 
             latestFrameBitmap?.let { bitmap ->
                 Image(
@@ -704,6 +708,15 @@ private fun TranscriptLine(entry: TranscriptEntry) {
                 }
             }
         }
+        if (entry.role == "assistant" && entry.safetyAction != "none") {
+            Text(
+                "Safety: ${entry.safetyCategory.displayToken()} (${entry.safetyAction.displayToken()})",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (entry.role == "assistant" && entry.timingMs.isNotEmpty()) {
+            Text(entry.timingSummary(), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -780,6 +793,9 @@ private data class PushToTalkReleaseResponse(
     val status: String,
     val assistantText: String?,
     val citations: List<CitationReference> = emptyList(),
+    val timingMs: Map<String, Int> = emptyMap(),
+    val safetyAction: String = "none",
+    val safetyCategory: String = "none",
 )
 
 data class CitationReference(
@@ -804,7 +820,23 @@ data class TranscriptEntry(
     val visualContext: String?,
     val visualStatus: String?,
     val citations: List<CitationReference> = emptyList(),
+    val timingMs: Map<String, Int> = emptyMap(),
+    val safetyAction: String = "none",
+    val safetyCategory: String = "none",
+    val assistantState: String? = null,
 )
+
+fun TranscriptEntry.timingSummary(): String {
+    val total = timingMs["total"]
+    val responseStart = timingMs["response_start"]
+    val retrieval = timingMs["retrieval"]
+    val parts = listOfNotNull(
+        responseStart?.let { "response ${it}ms" },
+        total?.let { "total ${it}ms" },
+        retrieval?.let { "retrieval ${it}ms" },
+    )
+    return parts.joinToString(" | ").ifBlank { "Timing captured" }
+}
 
 private data class FrameMetadata(
     val frameId: String?,
@@ -928,6 +960,9 @@ private object ManFridayBackendClient {
             status = json.getString("status"),
             assistantText = json.optNullableString("assistant_text"),
             citations = json.optCitationReferences(),
+            timingMs = json.optTimingMs(),
+            safetyAction = json.optString("safety_action", "none").ifBlank { "none" },
+            safetyCategory = json.optString("safety_category", "none").ifBlank { "none" },
         )
     }
 
@@ -1122,7 +1157,7 @@ private fun startEventClient(
 
             override fun onError(error: Throwable) {
                 mainHandler.post {
-                    onStatus("Error")
+                    onStatus("Backend unavailable")
                     onEvent(error.message ?: "WebSocket error", null)
                 }
             }
@@ -1173,9 +1208,26 @@ fun handleAssistantEvent(
                         visualContext = payload.optNullableString("visual_context"),
                         visualStatus = payload.optNullableString("visual_status"),
                         citations = payload.optCitationReferences(),
+                        timingMs = payload.optTimingMs(),
+                        safetyAction = payload.optString("safety_action", "none").ifBlank { "none" },
+                        safetyCategory = payload.optString("safety_category", "none").ifBlank { "none" },
+                        assistantState = assistantStateForTranscriptPayload(payload),
                     ),
                 )
                 if (role == "assistant" && payload.optBoolean("is_final", false)) {
+                    val safetyAction = payload.optString("safety_action", "none")
+                    val safetyCategory = payload.optString("safety_category", "none")
+                    if (safetyAction != "none") {
+                        onAssistantStatus(
+                            if (safetyCategory == "retrieval_low_confidence") {
+                                "Low confidence"
+                            } else {
+                                "Safety constrained"
+                            },
+                        )
+                    } else {
+                        onAssistantStatus("Speaking")
+                    }
                     onSpeak(turnId, text)
                 }
             }
@@ -1195,6 +1247,19 @@ fun JSONObject.optCitationReferences(key: String = "citations"): List<CitationRe
     return citations.toCitationReferences()
 }
 
+fun JSONObject.optTimingMs(key: String = "timing_ms"): Map<String, Int> {
+    val timing = optJSONObject(key) ?: return emptyMap()
+    return timing.keys().asSequence()
+        .mapNotNull { timingKey ->
+            if (timing.isNull(timingKey)) {
+                null
+            } else {
+                timingKey to timing.optInt(timingKey, 0).coerceAtLeast(0)
+            }
+        }
+        .toMap()
+}
+
 private fun JSONArray.toCitationReferences(): List<CitationReference> {
     return (0 until length()).mapNotNull { index ->
         optJSONObject(index)?.toCitationReference()
@@ -1209,4 +1274,61 @@ private fun JSONObject.toCitationReference(): CitationReference {
         sourceUri = sourceUri,
         section = optNullableString("section"),
     )
+}
+
+fun backendUiState(webSocketStatus: String): String {
+    return when {
+        webSocketStatus.contains("unavailable", ignoreCase = true) -> "Backend unavailable"
+        webSocketStatus.contains("error", ignoreCase = true) -> "Backend unavailable"
+        webSocketStatus.contains("reconnect failed", ignoreCase = true) -> "Backend unavailable"
+        webSocketStatus.contains("disconnected", ignoreCase = true) -> "Backend unavailable"
+        else -> "Connected"
+    }
+}
+
+fun liveKitUiState(liveKitStatus: String): String {
+    return if (
+        liveKitStatus.contains("unavailable", ignoreCase = true) ||
+        liveKitStatus.contains("failed", ignoreCase = true)
+    ) {
+        "LiveKit unavailable"
+    } else {
+        liveKitStatus
+    }
+}
+
+fun goproUiState(frameStatus: String): String {
+    return when {
+        frameStatus.contains("degraded", ignoreCase = true) -> "Visual degraded"
+        frameStatus.contains("unavailable", ignoreCase = true) -> "GoPro unavailable"
+        frameStatus.equals("No frame", ignoreCase = true) -> "GoPro unavailable"
+        else -> "Ready"
+    }
+}
+
+fun visualUiState(frameStatus: String): String {
+    return when {
+        frameStatus.contains("degraded", ignoreCase = true) -> "Visual degraded"
+        frameStatus.contains("unavailable", ignoreCase = true) -> "Visual unavailable"
+        frameStatus.equals("No frame", ignoreCase = true) -> "Visual unavailable"
+        else -> frameStatus
+    }
+}
+
+private fun assistantStateForTranscriptPayload(payload: JSONObject): String? {
+    val safetyAction = payload.optString("safety_action", "none")
+    val safetyCategory = payload.optString("safety_category", "none")
+    return when {
+        safetyCategory == "retrieval_low_confidence" -> "Low confidence"
+        safetyAction != "none" -> "Safety constrained"
+        payload.optString("role") == "assistant" && payload.optBoolean("is_final", false) -> "Speaking"
+        else -> null
+    }
+}
+
+private fun String.displayToken(): String {
+    return split('_')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token -> token.replaceFirstChar { it.uppercase() } }
+        .ifBlank { this }
 }

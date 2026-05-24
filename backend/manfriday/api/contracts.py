@@ -78,6 +78,8 @@ class PushToTalkReleaseResponse(BaseModel):
     visual_status: str | None = None
     timing_ms: dict[str, int] | None = None
     citations: list[CitationResponse] = Field(default_factory=list)
+    safety_action: str = "none"
+    safety_category: str = "none"
 
 
 class RetrievalSkippedResponse(BaseModel):

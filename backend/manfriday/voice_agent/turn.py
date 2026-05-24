@@ -32,6 +32,20 @@ class VoiceTurnResult:
     audio: SynthesizedAudio
     timing_ms: dict[str, int]
     citations: tuple[Citation, ...] = ()
+    safety_action: str = "none"
+    safety_category: str = "none"
+
+
+@dataclass(frozen=True)
+class SafetyAssessment:
+    category: str = "none"
+    action: str = "none"
+    reason: str = "none"
+    response_text: str | None = None
+
+    @property
+    def blocks_model(self) -> bool:
+        return self.response_text is not None
 
 
 class RetrievalContextProvider(Protocol):
@@ -123,6 +137,7 @@ class VoiceTurnOrchestrator:
         citations = retrieval_context.citations if retrieval_context is not None else ()
         citation_payload = [_citation_payload(citation) for citation in citations]
         retrieval_debug = _retrieval_debug_payload(retrieval_context)
+        safety = _classify_user_prompt(transcript.text)
 
         await self._publish(
             "assistant.transcript.delta",
@@ -137,34 +152,40 @@ class VoiceTurnOrchestrator:
                 "visual_status": visual_status,
             },
         )
-        try:
-            model_start = perf_counter()
-            response = self._model_provider.complete_turn(
-                ModelTurnRequest(
-                    turn_id=turn_id,
-                    session_id=session_id,
-                    user_text=transcript.text,
-                    frame_id=frame_id,
-                    visual_status=visual_status,
-                    retrieval_context=retrieval_context,
-                ),
-            )
-            response_text, safety_action = _apply_low_confidence_guard(
-                response.text,
-                retrieval_context,
-            )
-            response = ModelTurnResponse(text=response_text)
-            timings["model"] = self._elapsed_ms(model_start)
+        if safety.blocks_model:
+            response = ModelTurnResponse(text=safety.response_text or "")
+            timings["model"] = 0
             timings["response_start"] = self._elapsed_ms(started_at)
-        except Exception as exc:
-            await self._publish_error(
-                session_id=session_id,
-                turn_id=turn_id,
-                code="model_failed",
-                message=str(exc),
-                retryable=True,
-            )
-            raise VoiceTurnError("Model turn failed.") from exc
+        else:
+            try:
+                model_start = perf_counter()
+                response = self._model_provider.complete_turn(
+                    ModelTurnRequest(
+                        turn_id=turn_id,
+                        session_id=session_id,
+                        user_text=transcript.text,
+                        frame_id=frame_id,
+                        visual_status=visual_status,
+                        retrieval_context=retrieval_context,
+                    ),
+                )
+                response_text, safety = _apply_post_model_safety(
+                    response.text,
+                    retrieval_context,
+                    safety,
+                )
+                response = ModelTurnResponse(text=response_text)
+                timings["model"] = self._elapsed_ms(model_start)
+                timings["response_start"] = self._elapsed_ms(started_at)
+            except Exception as exc:
+                await self._publish_error(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    code="model_failed",
+                    message=str(exc),
+                    retryable=True,
+                )
+                raise VoiceTurnError("Model turn failed.") from exc
 
         await self._publish(
             "assistant.response.started",
@@ -209,7 +230,8 @@ class VoiceTurnOrchestrator:
             "visual_context": visual_context,
             "visual_status": visual_status,
             "citations": citation_payload,
-            "safety_action": safety_action,
+            "safety_action": safety.action,
+            "safety_category": safety.category,
         }
         if debug_enabled:
             assistant_payload["retrieval_debug"] = retrieval_debug
@@ -228,6 +250,8 @@ class VoiceTurnOrchestrator:
                 "visual_context": visual_context,
                 "visual_status": visual_status,
                 "citations": citation_payload,
+                "safety_action": safety.action,
+                "safety_category": safety.category,
                 "audio_mime_type": speech.mime_type,
                 "tts_audio_ref": tts_audio_ref,
                 "timing_ms": timings,
@@ -247,8 +271,9 @@ class VoiceTurnOrchestrator:
                 "frame_id": frame_id,
                 "citations": citation_payload,
             }
-            if safety_action != "none":
-                memory_turn["safety_action"] = safety_action
+            if safety.action != "none":
+                memory_turn["safety_action"] = safety.action
+                memory_turn["safety_category"] = safety.category
             if debug_enabled:
                 memory_turn["retrieval_debug"] = retrieval_debug
             session_memory.setdefault("turns", []).append(memory_turn)
@@ -258,7 +283,8 @@ class VoiceTurnOrchestrator:
                 turn_id=turn_id,
                 payload={
                     **retrieval_debug,
-                    "safety_action": safety_action,
+                    "safety_action": safety.action,
+                    "safety_category": safety.category,
                 },
             )
         return VoiceTurnResult(
@@ -270,6 +296,8 @@ class VoiceTurnOrchestrator:
             audio=speech,
             timing_ms=timings,
             citations=citations,
+            safety_action=safety.action,
+            safety_category=safety.category,
         )
 
     def _select_frame(self) -> FrameMetadata | None:
@@ -393,25 +421,145 @@ def _retrieval_debug_payload(context: RetrievalContext | None) -> dict:
     }
 
 
-def _apply_low_confidence_guard(
+def _apply_post_model_safety(
     text: str,
     context: RetrievalContext | None,
-) -> tuple[str, str]:
-    if context is None or context.safety_policy.confidence != "low_confidence":
-        return text, "none"
-    if not _looks_like_procedural_tool_instruction(text):
-        return text, "none"
-    return (
-        "I do not have enough trusted retrieval context to answer that safely. "
-        "Please add or open the relevant manual/source, then ask again with the "
-        "specific model, part, or procedure.",
-        "replaced_low_confidence_tool_instruction",
-    )
+    pre_model_safety: SafetyAssessment,
+) -> tuple[str, SafetyAssessment]:
+    low_confidence_result = _apply_low_confidence_guard(text, context)
+    if low_confidence_result.action != "none":
+        return low_confidence_result.response_text or text, low_confidence_result
+
+    output_safety = _classify_model_output(text)
+    if output_safety.action != "none":
+        return output_safety.response_text or text, output_safety
+    return text, pre_model_safety
 
 
 def _looks_like_procedural_tool_instruction(text: str) -> bool:
     imperative = re.compile(
-        r"\b(press|hold|turn|cut|drill|wire|remove|install|set|configure|tighten|loosen)\b",
+        r"\b(press|hold|turn|cut|drill|wire|remove|install|set|configure|"
+        r"tighten|loosen|disable|bypass|short|overload|ignite|dose|inject|invest)\b",
         re.IGNORECASE,
     )
     return bool(imperative.search(text))
+
+
+def _apply_low_confidence_guard(
+    text: str,
+    context: RetrievalContext | None,
+) -> SafetyAssessment:
+    if context is None or context.safety_policy.confidence != "low_confidence":
+        return SafetyAssessment()
+    if not _looks_like_procedural_tool_instruction(text):
+        return SafetyAssessment()
+    return SafetyAssessment(
+        category="retrieval_low_confidence",
+        action="replaced_low_confidence_tool_instruction",
+        reason="procedural_output_without_retrieval_support",
+        response_text=(
+            "I do not have enough trusted retrieval context to answer that safely. "
+            "Please add or open the relevant manual/source, then ask again with the "
+            "specific model, part, or procedure."
+        ),
+    )
+
+
+def _classify_user_prompt(text: str) -> SafetyAssessment:
+    normalized = text.lower()
+    category = _risk_category(normalized)
+    if category == "none":
+        return SafetyAssessment()
+    if category == "bypass_safety_controls" or _asks_for_instructions(normalized):
+        return SafetyAssessment(
+            category=category,
+            action="pre_model_constrained",
+            reason="high_risk_instruction_request",
+            response_text=_safe_alternative_response(category),
+        )
+    return SafetyAssessment(category=category, action="flagged_for_model", reason="high_risk_topic")
+
+
+def _classify_model_output(text: str) -> SafetyAssessment:
+    normalized = text.lower()
+    category = _risk_category(normalized)
+    if category == "none" or not _looks_like_procedural_tool_instruction(normalized):
+        return SafetyAssessment()
+    return SafetyAssessment(
+        category=category,
+        action="post_model_replaced_unsafe_instruction",
+        reason="unsafe_procedural_model_output",
+        response_text=_safe_alternative_response(category),
+    )
+
+
+def _risk_category(text: str) -> str:
+    checks = (
+        (
+            "bypass_safety_controls",
+            r"\b(bypass|disable|remove|override|defeat)\b.*\b("
+            r"safety|guard|interlock|lockout|fuse|breaker|limit)\b",
+        ),
+        (
+            "electrical_fire_battery_risk",
+            r"\b(lithium|battery|lipo|fire|mains|120v|240v|electrical|wire|short|"
+            r"solder|charger|overload|ignite)\b",
+        ),
+        (
+            "medical_legal_financial_advice",
+            r"\b(medical|diagnos|medicine|dose|legal|lawsuit|contract|tax|invest|"
+            r"stock|loan|insurance|financial)\b",
+        ),
+        (
+            "dangerous_tool_operation",
+            r"\b(table saw|circular saw|miter saw|angle grinder|drill press|laser cutter|"
+            r"chainsaw|router|welding|welder|blade|cutting path|torque|calibration depth)\b",
+        ),
+    )
+    for category, pattern in checks:
+        if re.search(pattern, text, re.IGNORECASE):
+            return category
+    return "none"
+
+
+def _asks_for_instructions(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(how|steps?|walk me through|tell me how|should i|what should i|"
+            r"instructions?|procedure|configure|calibrate|install|remove|repair|fix)\b",
+            text,
+            re.IGNORECASE,
+        ),
+    )
+
+
+def _safe_alternative_response(category: str) -> str:
+    match category:
+        case "dangerous_tool_operation":
+            return (
+                "I cannot provide step-by-step instructions for a high-risk tool operation. "
+                "Use the manufacturer manual, keep guards and interlocks in place, wear the "
+                "required PPE, and get help from a qualified operator before proceeding."
+            )
+        case "electrical_fire_battery_risk":
+            return (
+                "I cannot provide procedural instructions for electrical, fire, or battery "
+                "risk. Stop if there is heat, swelling, smoke, exposed wiring, or uncertainty; "
+                "use the manufacturer guidance and a qualified technician."
+            )
+        case "medical_legal_financial_advice":
+            return (
+                "I cannot give professional medical, legal, or financial advice. I can help "
+                "organize questions and context, but you should consult a qualified professional "
+                "for a decision."
+            )
+        case "bypass_safety_controls":
+            return (
+                "I cannot help bypass, remove, or disable safety controls. Keep safety systems "
+                "enabled and use the documented procedure or a qualified technician."
+            )
+        case _:
+            return (
+                "I cannot provide instructions for that high-risk request. Use trusted source "
+                "documentation or a qualified expert before proceeding."
+            )

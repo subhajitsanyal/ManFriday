@@ -175,6 +175,8 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert released.json()["status"] == "completed"
     assert released.json()["turn_id"] == started.json()["turn_id"]
     assert released.json()["user_text"] == "What is on the workbench?"
+    assert released.json()["safety_action"] == "none"
+    assert released.json()["safety_category"] == "none"
     assert released.json()["timing_ms"]["response_start"] >= 0
     assert [event["type"] for event in turn_events] == [
         "assistant.state.changed",
@@ -188,6 +190,8 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert turn_events[1]["payload"]["text"] == "What is on the workbench?"
     assert turn_events[2]["payload"]["timing_ms"]["response_start"] >= 0
     assert turn_events[3]["payload"]["role"] == "assistant"
+    assert turn_events[3]["payload"]["safety_action"] == "none"
+    assert turn_events[3]["payload"]["safety_category"] == "none"
 
 
 def test_push_to_talk_release_response_and_transcript_include_retrieval_citations() -> None:
@@ -227,6 +231,46 @@ def test_push_to_talk_release_response_and_transcript_include_retrieval_citation
         and event["payload"]["role"] == "assistant"
     )
     assert assistant_transcript["payload"]["citations"][0]["source_uri"] == "notes.txt"
+
+
+def test_push_to_talk_high_risk_response_includes_safety_metadata() -> None:
+    client = TestClient(create_app(_settings()))
+    headers = _headers()
+    start = client.post("/session/start", headers=headers, json={}).json()
+
+    with client.websocket_connect(
+        f"/ws?session_id={start['session_id']}",
+        headers=headers,
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "session.status.changed"
+        client.post(
+            "/assistant/push-to-talk/start",
+            headers=headers,
+            json={"session_id": start["session_id"]},
+        )
+        assert websocket.receive_json()["payload"]["assistant_state"] == "listening"
+        released = client.post(
+            "/assistant/push-to-talk/release",
+            headers=headers,
+            json={
+                "session_id": start["session_id"],
+                "user_text": "How do I bypass the blade guard safety interlock?",
+            },
+        )
+        turn_events = [websocket.receive_json() for _ in range(6)]
+
+    assert released.status_code == 200
+    assert released.json()["safety_action"] == "pre_model_constrained"
+    assert released.json()["safety_category"] == "bypass_safety_controls"
+    assert "cannot help bypass" in released.json()["assistant_text"]
+    assistant_transcript = next(
+        event
+        for event in turn_events
+        if event["type"] == "assistant.transcript.delta"
+        and event["payload"]["role"] == "assistant"
+    )
+    assert assistant_transcript["payload"]["safety_action"] == "pre_model_constrained"
+    assert assistant_transcript["payload"]["safety_category"] == "bypass_safety_controls"
 
 
 def test_debug_session_writes_retrieval_artifact(tmp_path: Path) -> None:

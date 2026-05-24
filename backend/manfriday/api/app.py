@@ -387,6 +387,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             frame_id=result.frame_id if result else None,
             visual_status=result.visual_status if result else None,
             timing_ms=result.timing_ms if result else None,
+            safety_action=result.safety_action if result else "none",
+            safety_category=result.safety_category if result else "none",
             citations=[
                 {
                     "citation_id": citation.citation_id,

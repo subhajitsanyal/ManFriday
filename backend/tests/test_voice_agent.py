@@ -74,6 +74,10 @@ def test_mock_turn_emits_transcript_response_events_and_updates_memory() -> None
     assert events[2].payload["visual_context"] == "frame"
     assert events[2].payload["timing_ms"]["response_start"] >= 0
     assert events[3].payload["role"] == "assistant"
+    assert events[3].payload["safety_action"] == "none"
+    assert events[3].payload["safety_category"] == "none"
+    assert events[4].payload["safety_action"] == "none"
+    assert events[4].payload["safety_category"] == "none"
     assert events[4].payload["tts_audio_ref"] == f"mock://tts/{result.turn_id}"
     assert events[4].payload["timing_ms"]["response_start"] >= 0
     assert (
@@ -223,6 +227,54 @@ def test_debug_mode_writes_retrieval_decision_artifact(tmp_path: Path) -> None:
     )
     assert assistant_transcript.payload["retrieval_debug"]["query"] == "Where is the hex key?"
     assert memory["turns"][0]["retrieval_debug"]["selected_chunks"][0]["source_uri"] == "notes.txt"
+
+
+def test_high_risk_prompt_is_constrained_before_model_call() -> None:
+    model_provider = CapturingModelProvider()
+
+    result, events, memory = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            model_provider=model_provider,
+            user_text="How do I bypass the blade guard safety interlock on a table saw?",
+        ),
+    )
+
+    assert model_provider.requests == []
+    assert "cannot help bypass" in result.assistant_text
+    assert result.safety_action == "pre_model_constrained"
+    assert result.safety_category == "bypass_safety_controls"
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["safety_action"] == "pre_model_constrained"
+    assert assistant_transcript.payload["safety_category"] == "bypass_safety_controls"
+    completed = next(event for event in events if event.type == "assistant.response.completed")
+    assert completed.payload["safety_action"] == "pre_model_constrained"
+    assert memory["turns"][0]["safety_category"] == "bypass_safety_controls"
+
+
+def test_post_model_safety_replaces_unsafe_procedural_output() -> None:
+    result, events, _ = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            model_provider=ElectricalInstructionModelProvider(),
+            user_text="Can you summarize this connector?",
+        ),
+    )
+
+    assert "cannot provide procedural instructions" in result.assistant_text
+    assert "short the battery terminals" not in result.assistant_text
+    assert result.safety_action == "post_model_replaced_unsafe_instruction"
+    assert result.safety_category == "electrical_fire_battery_risk"
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["safety_category"] == "electrical_fire_battery_risk"
 
 
 def test_empty_stt_text_emits_retryable_error_and_stops_turn() -> None:
@@ -789,6 +841,13 @@ class ProceduralInstructionModelProvider:
     def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
         return ModelTurnResponse(
             text="Press the red setup button, then configure the calibration depth.",
+        )
+
+
+class ElectricalInstructionModelProvider:
+    def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
+        return ModelTurnResponse(
+            text="Hold the wire in place and short the battery terminals to test the charger.",
         )
 
 

@@ -348,6 +348,18 @@ Implemented slice:
 - Tests cover low-confidence guard behavior, generic-word low-confidence
   classification, direct debug artifact writing, and authenticated debug-session
   artifact writing through push-to-talk.
+- General high-risk prompt classification covers dangerous tool operations,
+  electrical/fire/battery risk, medical/legal/financial advice, and requests to
+  bypass safety controls.
+- Pre-model safety constraints bypass the model for high-risk instruction
+  requests and return a safer path with manufacturer documentation or qualified
+  expert guidance.
+- Post-model safety enforcement replaces unsafe procedural output while
+  preserving a helpful alternative.
+- Assistant transcript events, completed events, push-to-talk API responses,
+  and session memory include safety action/category metadata when applicable.
+- Tests cover pre-model model bypass, post-model unsafe-output replacement,
+  normal visual/retrieval flows, and API/transcript safety metadata.
 
 Integration checkpoint:
 

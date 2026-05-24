@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -6,6 +7,8 @@ from starlette.websockets import WebSocketDisconnect
 from manfriday.api.app import create_app
 from manfriday.config.settings import Settings
 from manfriday.sessions.store import SessionStore
+
+RETRIEVAL_FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
 
 
 def test_session_routes_require_bearer_auth() -> None:
@@ -186,6 +189,45 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert turn_events[3]["payload"]["role"] == "assistant"
 
 
+def test_push_to_talk_release_response_and_transcript_include_retrieval_citations() -> None:
+    client = TestClient(create_app(_settings(RETRIEVAL_LOCAL_DOCS_DIR=RETRIEVAL_FIXTURES)))
+    headers = _headers()
+    start = client.post("/session/start", headers=headers, json={}).json()
+
+    with client.websocket_connect(
+        f"/ws?session_id={start['session_id']}",
+        headers=headers,
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "session.status.changed"
+        client.post(
+            "/assistant/push-to-talk/start",
+            headers=headers,
+            json={"session_id": start["session_id"]},
+        )
+        assert websocket.receive_json()["payload"]["assistant_state"] == "listening"
+        released = client.post(
+            "/assistant/push-to-talk/release",
+            headers=headers,
+            json={
+                "session_id": start["session_id"],
+                "user_text": "Where is the hex key?",
+            },
+        )
+        turn_events = [websocket.receive_json() for _ in range(6)]
+
+    assert released.status_code == 200
+    citation = released.json()["citations"][0]
+    assert citation["source_uri"] == "notes.txt"
+    assert citation["source_title"] == "notes"
+    assistant_transcript = next(
+        event
+        for event in turn_events
+        if event["type"] == "assistant.transcript.delta"
+        and event["payload"]["role"] == "assistant"
+    )
+    assert assistant_transcript["payload"]["citations"][0]["source_uri"] == "notes.txt"
+
+
 def test_push_to_talk_release_without_speech_discards_turn() -> None:
     client = TestClient(create_app(_settings()))
     headers = _headers()
@@ -208,13 +250,17 @@ def test_push_to_talk_release_without_speech_discards_turn() -> None:
     assert client.app.state.session_store.get(start["session_id"]).memory == {}
 
 
-def _settings() -> Settings:
+def _settings(**overrides) -> Settings:
+    values = {
+        "MANFRIDAY_LOCAL_SECRET": "test-secret",
+        "MODEL_PROVIDER": "mock",
+        "LIVEKIT_URL": "ws://livekit.test:7880",
+        "LIVEKIT_API_KEY": "devkey",
+        "LIVEKIT_API_SECRET": "devsecret",
+    }
+    values.update(overrides)
     return Settings(
-        MANFRIDAY_LOCAL_SECRET="test-secret",
-        MODEL_PROVIDER="mock",
-        LIVEKIT_URL="ws://livekit.test:7880",
-        LIVEKIT_API_KEY="devkey",
-        LIVEKIT_API_SECRET="devsecret",
+        **values,
     )
 
 

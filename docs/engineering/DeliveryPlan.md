@@ -243,11 +243,19 @@ Implemented slice:
   text and deterministic local/manual source preference.
 - Authenticated `POST /retrieval/query` endpoint returning ranked chunks,
   source metadata, score components, and stable result ordering.
+- Retrieval context builder that pulls top keyword-ranked chunks for the user
+  question and injects source/title/section metadata into OpenAI and Bedrock
+  model prompts.
+- Assistant transcript events, push-to-talk API responses, and session memory
+  now include citation references when retrieval context is used.
 - Fixture coverage for local `.md`, `.txt`, unsupported files, size-limit skips,
   stable IDs, source metadata, and chunk metadata.
 - Query coverage for keyword matching, section matching, stable ordering,
   local/manual source preference, authenticated API access, and empty/missing
   index behavior.
+- Voice turn coverage proves retrieved chunks are included in model prompts,
+  citations carry URI/title/section metadata, and no-result retrieval does not
+  block answers.
 
 Integration checkpoint:
 

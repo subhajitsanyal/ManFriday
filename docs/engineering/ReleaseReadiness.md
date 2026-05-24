@@ -84,11 +84,12 @@ settings storage, and Android tests are still pending.
 - [x] BM25/keyword index works for ingested Markdown/text chunks.
 - [x] Authenticated `POST /retrieval/query` returns ranked chunks.
 - [x] Local/manual source preference is covered for ranked chunk ties.
+- [x] Agent prompt includes retrieval context for local Markdown/text chunks.
+- [x] Push-to-talk responses and transcript events include citation references.
 - [ ] PDF ingestion applies page and size limits.
 - [ ] Configured URL ingestion uses YAML and reports per-source failures.
 - [ ] FAISS vector index persists locally.
 - [ ] Merge/rerank applies local/manual source preference.
-- [ ] Agent prompt includes retrieval context.
 - [ ] Android renders citations.
 
 ### Phase 4a

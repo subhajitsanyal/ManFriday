@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -7,6 +8,7 @@ from manfriday.api.app import create_app
 from manfriday.config.settings import Settings
 from manfriday.events import EventBus
 from manfriday.frames import FrameStore
+from manfriday.retrieval import RetrievalContextBuilder
 from manfriday.voice_agent import (
     AudioInput,
     BedrockClaudeModel,
@@ -15,6 +17,7 @@ from manfriday.voice_agent import (
     MockTextToSpeechProvider,
     MockVisionLanguageModel,
     ModelTurnRequest,
+    ModelTurnResponse,
     MultipartFile,
     OpenAISpeechToTextProvider,
     OpenAITextToSpeechProvider,
@@ -28,6 +31,8 @@ from manfriday.voice_agent import (
     build_openai_client,
 )
 from manfriday.voice_agent.smoke import _run as run_voice_smoke
+
+RETRIEVAL_FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
 
 
 def test_voice_agent_worker_describes_livekit_connection() -> None:
@@ -77,6 +82,7 @@ def test_mock_turn_emits_transcript_response_events_and_updates_memory() -> None
             "user_text": result.user_text,
             "assistant_text": result.assistant_text,
             "frame_id": result.frame_id,
+            "citations": [],
         },
     ]
 
@@ -107,6 +113,52 @@ def test_mock_turn_completes_without_fresh_frame() -> None:
     assert events[2].payload["visual_context"] == "unavailable"
     assert events[2].payload["visual_status"] == "degraded"
     assert "do not have a fresh frame" in result.assistant_text
+
+
+def test_turn_includes_retrieval_context_in_model_request_and_emits_citations() -> None:
+    model_provider = CapturingModelProvider()
+
+    result, events, memory = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            model_provider=model_provider,
+            retrieval_context_provider=RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES),
+            user_text="Where is the hex key?",
+        ),
+    )
+
+    assert model_provider.requests[0].retrieval_context is not None
+    assert model_provider.requests[0].retrieval_context.chunks[0].source.uri == "notes.txt"
+    assert result.citations[0].source_uri == "notes.txt"
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["citations"][0]["source_uri"] == "notes.txt"
+    completed = next(event for event in events if event.type == "assistant.response.completed")
+    assert completed.payload["citations"][0]["source_title"] == "notes"
+    assert memory["turns"][0]["citations"][0]["source_uri"] == "notes.txt"
+
+
+def test_turn_retrieval_no_results_does_not_block_answer() -> None:
+    model_provider = CapturingModelProvider()
+
+    result, events, _ = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            model_provider=model_provider,
+            retrieval_context_provider=RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES),
+            user_text="Unmatched sprocket question",
+        ),
+    )
+
+    assert result.assistant_text == "captured response"
+    assert result.citations == ()
+    assert model_provider.requests[0].retrieval_context is not None
+    assert model_provider.requests[0].retrieval_context.chunks == ()
+    completed = next(event for event in events if event.type == "assistant.response.completed")
+    assert completed.payload["citations"] == []
 
 
 def test_empty_stt_text_emits_retryable_error_and_stops_turn() -> None:
@@ -299,7 +351,8 @@ def test_bedrock_claude_model_invokes_anthropic_messages_payload() -> None:
                                 "text": (
                                     "Answer the user's question using the visual context when "
                                     "available.\n\nVisual status: healthy\nSelected frame ID: "
-                                    "frame_123.\nUser question: What is this part?"
+                                    "frame_123.\nRetrieved context: none.\nUser question: "
+                                    "What is this part?"
                                 ),
                             },
                         ],
@@ -308,6 +361,34 @@ def test_bedrock_claude_model_invokes_anthropic_messages_payload() -> None:
             },
         },
     ]
+
+
+def test_bedrock_prompt_includes_retrieved_chunk_metadata() -> None:
+    client = FakeBedrockClient()
+    provider = BedrockClaudeModel(
+        client=client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        max_tokens=512,
+    )
+    retrieval_context = RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES).build(
+        "camera mount",
+    )
+
+    provider.complete_turn(
+        ModelTurnRequest(
+            turn_id="turn_test",
+            session_id="sess_test",
+            user_text="Where should the camera mount go?",
+            frame_id="frame_123",
+            visual_status="healthy",
+            retrieval_context=retrieval_context,
+        ),
+    )
+
+    prompt = client.invocations[0]["payload"]["messages"][0]["content"][0]["text"]
+    assert "[cite_1] Workbench Safety Manual (workbench_manual.md, section: Clamp Setup)" in prompt
+    assert "Keep the camera mount outside the cutting path." in prompt
+    assert "User question: Where should the camera mount go?" in prompt
 
 
 def test_worker_builds_bedrock_orchestrator_from_config() -> None:
@@ -499,6 +580,8 @@ async def _run_turn(
     stt_provider=None,
     model_provider=None,
     tts_provider=None,
+    retrieval_context_provider=None,
+    user_text: str | None = None,
 ):
     session_id = "sess_test"
     memory: dict = {}
@@ -510,10 +593,12 @@ async def _run_turn(
         tts_provider=tts_provider or MockTextToSpeechProvider(),
         frame_store=frame_store,
         event_bus=event_bus,
+        retrieval_context_provider=retrieval_context_provider,
     )
     result = await orchestrator.run_turn(
         session_id=session_id,
         audio=AudioInput(content=b"audio"),
+        user_text=user_text,
         session_memory=memory,
     )
     return result, _drain_events(queue), memory
@@ -621,6 +706,15 @@ def _session(session_id: str):
 class FailingModelProvider:
     def complete_turn(self, request):
         raise RuntimeError("mock model failed")
+
+
+class CapturingModelProvider:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
+        self.requests.append(request)
+        return ModelTurnResponse(text="captured response")
 
 
 class CountingTtsProvider:

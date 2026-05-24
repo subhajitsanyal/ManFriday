@@ -366,6 +366,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             frame_id=result.frame_id if result else None,
             visual_status=result.visual_status if result else None,
             timing_ms=result.timing_ms if result else None,
+            citations=[
+                {
+                    "citation_id": citation.citation_id,
+                    "source_id": citation.source_id,
+                    "chunk_id": citation.chunk_id,
+                    "source_title": citation.source_title,
+                    "source_uri": citation.source_uri,
+                    "source_type": citation.source_type,
+                    "section": citation.section,
+                    "score": citation.score,
+                }
+                for citation in result.citations
+            ]
+            if result
+            else [],
         )
 
     @app.get(

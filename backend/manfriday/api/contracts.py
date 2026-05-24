@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SessionStartRequest(BaseModel):
@@ -57,6 +57,17 @@ class PushToTalkReleaseRequest(BaseModel):
     has_speech: bool = True
 
 
+class CitationResponse(BaseModel):
+    citation_id: str
+    source_id: str
+    chunk_id: str
+    source_title: str
+    source_uri: str
+    source_type: str
+    section: str | None
+    score: float
+
+
 class PushToTalkReleaseResponse(BaseModel):
     session_id: str
     turn_id: str
@@ -66,6 +77,7 @@ class PushToTalkReleaseResponse(BaseModel):
     frame_id: str | None = None
     visual_status: str | None = None
     timing_ms: dict[str, int] | None = None
+    citations: list[CitationResponse] = Field(default_factory=list)
 
 
 class RetrievalSkippedResponse(BaseModel):

@@ -210,12 +210,29 @@ def _model_prompt(request_model: ModelTurnRequest) -> str:
         if request_model.frame_id
         else "No fresh visual frame is available."
     )
+    retrieval_context = _retrieval_prompt(request_model)
     return (
         "Answer the user's question using the visual context when available.\n\n"
         f"Visual status: {request_model.visual_status}\n"
         f"{frame_context}\n"
+        f"{retrieval_context}"
         f"User question: {request_model.user_text}"
     )
+
+
+def _retrieval_prompt(request_model: ModelTurnRequest) -> str:
+    context = request_model.retrieval_context
+    if context is None or not context.chunks:
+        return "Retrieved context: none.\n"
+    lines = ["Retrieved context:"]
+    for citation, result in zip(context.citations, context.chunks, strict=True):
+        section = f", section: {citation.section}" if citation.section else ""
+        lines.append(
+            f"[{citation.citation_id}] {citation.source_title} "
+            f"({citation.source_uri}{section})\n{result.chunk.text}"
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _extract_bedrock_text(response: dict) -> str:

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from manfriday.config.settings import Settings
 from manfriday.events import EventBus
 from manfriday.frames import FrameStore
+from manfriday.retrieval import RetrievalContextBuilder
 from manfriday.voice_agent.bedrock_provider import BedrockClaudeModel, build_bedrock_client
 from manfriday.voice_agent.openai_provider import (
     OpenAISpeechToTextProvider,
@@ -45,6 +46,9 @@ class VoiceAgentWorker:
             tts_provider=MockTextToSpeechProvider(),
             frame_store=frame_store,
             event_bus=event_bus,
+            retrieval_context_provider=RetrievalContextBuilder(
+                local_docs_dir=self.settings.retrieval_local_docs_dir,
+            ),
         )
 
     def build_turn_orchestrator(
@@ -93,6 +97,9 @@ class VoiceAgentWorker:
             ),
             frame_store=frame_store,
             event_bus=event_bus,
+            retrieval_context_provider=RetrievalContextBuilder(
+                local_docs_dir=self.settings.retrieval_local_docs_dir,
+            ),
         )
 
     def build_bedrock_turn_orchestrator(
@@ -112,4 +119,7 @@ class VoiceAgentWorker:
             tts_provider=MockTextToSpeechProvider(),
             frame_store=frame_store,
             event_bus=event_bus,
+            retrieval_context_provider=RetrievalContextBuilder(
+                local_docs_dir=self.settings.retrieval_local_docs_dir,
+            ),
         )

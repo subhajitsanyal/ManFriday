@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Protocol
 from uuid import uuid4
 
 from manfriday.events import EventBus, EventEnvelope
 from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
+from manfriday.retrieval import Citation, RetrievalContext
 from manfriday.voice_agent.providers import (
     AudioInput,
     ModelTurnRequest,
@@ -25,6 +27,11 @@ class VoiceTurnResult:
     visual_status: str
     audio: SynthesizedAudio
     timing_ms: dict[str, int]
+    citations: tuple[Citation, ...] = ()
+
+
+class RetrievalContextProvider(Protocol):
+    def build(self, query: str) -> RetrievalContext: ...
 
 
 class VoiceTurnError(RuntimeError):
@@ -40,12 +47,14 @@ class VoiceTurnOrchestrator:
         tts_provider: TextToSpeechProvider,
         frame_store: FrameStore,
         event_bus: EventBus,
+        retrieval_context_provider: RetrievalContextProvider | None = None,
     ) -> None:
         self._stt_provider = stt_provider
         self._model_provider = model_provider
         self._tts_provider = tts_provider
         self._frame_store = frame_store
         self._event_bus = event_bus
+        self._retrieval_context_provider = retrieval_context_provider
 
     async def run_turn(
         self,
@@ -103,6 +112,9 @@ class VoiceTurnOrchestrator:
         frame_id = frame.frame_id if frame else None
         visual_context = "frame" if frame else "unavailable"
         visual_status = "healthy" if frame else "degraded"
+        retrieval_context = self._build_retrieval_context(transcript.text)
+        citations = retrieval_context.citations if retrieval_context is not None else ()
+        citation_payload = [_citation_payload(citation) for citation in citations]
 
         await self._publish(
             "assistant.transcript.delta",
@@ -126,6 +138,7 @@ class VoiceTurnOrchestrator:
                     user_text=transcript.text,
                     frame_id=frame_id,
                     visual_status=visual_status,
+                    retrieval_context=retrieval_context,
                 ),
             )
             timings["model"] = self._elapsed_ms(model_start)
@@ -185,6 +198,7 @@ class VoiceTurnOrchestrator:
                 "frame_id": frame_id,
                 "visual_context": visual_context,
                 "visual_status": visual_status,
+                "citations": citation_payload,
             },
         )
         timings["total"] = self._elapsed_ms(started_at)
@@ -196,6 +210,7 @@ class VoiceTurnOrchestrator:
                 "frame_id": frame_id,
                 "visual_context": visual_context,
                 "visual_status": visual_status,
+                "citations": citation_payload,
                 "audio_mime_type": speech.mime_type,
                 "tts_audio_ref": tts_audio_ref,
                 "timing_ms": timings,
@@ -214,6 +229,7 @@ class VoiceTurnOrchestrator:
                     "user_text": transcript.text,
                     "assistant_text": response.text,
                     "frame_id": frame_id,
+                    "citations": citation_payload,
                 },
             )
         return VoiceTurnResult(
@@ -224,10 +240,16 @@ class VoiceTurnOrchestrator:
             visual_status=visual_status,
             audio=speech,
             timing_ms=timings,
+            citations=citations,
         )
 
     def _select_frame(self) -> FrameMetadata | None:
         return self._frame_store.pinned() or self._frame_store.latest_if_healthy()
+
+    def _build_retrieval_context(self, query: str) -> RetrievalContext | None:
+        if self._retrieval_context_provider is None:
+            return None
+        return self._retrieval_context_provider.build(query)
 
     async def _publish(self, event_type: str, *, session_id: str, payload: dict) -> None:
         await self._event_bus.publish(
@@ -279,3 +301,16 @@ class VoiceTurnOrchestrator:
     @staticmethod
     def _elapsed_ms(started_at: float) -> int:
         return max(0, int((perf_counter() - started_at) * 1000))
+
+
+def _citation_payload(citation: Citation) -> dict:
+    return {
+        "citation_id": citation.citation_id,
+        "source_id": citation.source_id,
+        "chunk_id": citation.chunk_id,
+        "source_title": citation.source_title,
+        "source_uri": citation.source_uri,
+        "source_type": citation.source_type,
+        "section": citation.section,
+        "score": citation.score,
+    }

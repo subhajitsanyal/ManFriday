@@ -48,6 +48,40 @@ class RankedChunk:
 
 
 @dataclass(frozen=True)
+class Citation:
+    citation_id: str
+    source_id: str
+    chunk_id: str
+    source_title: str
+    source_uri: str
+    source_type: SourceType
+    section: str | None
+    score: float
+
+
+@dataclass(frozen=True)
+class RetrievalContext:
+    query: str
+    chunks: tuple[RankedChunk, ...] = ()
+
+    @property
+    def citations(self) -> tuple[Citation, ...]:
+        return tuple(
+            Citation(
+                citation_id=f"cite_{index + 1}",
+                source_id=result.source.source_id,
+                chunk_id=result.chunk.chunk_id,
+                source_title=result.source.title,
+                source_uri=result.source.uri,
+                source_type=result.source.type,
+                section=result.chunk.section,
+                score=result.score,
+            )
+            for index, result in enumerate(self.chunks)
+        )
+
+
+@dataclass(frozen=True)
 class SourceIngestionResult:
     source: SourceMetadata
     chunks: tuple[ChunkMetadata, ...]

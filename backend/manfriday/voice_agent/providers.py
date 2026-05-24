@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from manfriday.retrieval import RetrievalContext
+
 
 @dataclass(frozen=True)
 class AudioInput:
@@ -20,6 +22,7 @@ class ModelTurnRequest:
     user_text: str
     frame_id: str | None
     visual_status: str
+    retrieval_context: RetrievalContext | None = None
 
 
 @dataclass(frozen=True)

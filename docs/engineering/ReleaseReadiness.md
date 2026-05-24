@@ -79,6 +79,8 @@ settings storage, and Android tests are still pending.
 
 - [x] Source/chunk metadata schema is implemented.
 - [x] Markdown/text ingestion passes fixture tests.
+- [x] `manfriday ingest` builds local Markdown/text metadata.
+- [x] `POST /retrieval/ingest` returns authenticated per-source summary.
 - [ ] PDF ingestion applies page and size limits.
 - [ ] Configured URL ingestion uses YAML and reports per-source failures.
 - [ ] BM25 index works.

@@ -68,6 +68,38 @@ class PushToTalkReleaseResponse(BaseModel):
     timing_ms: dict[str, int] | None = None
 
 
+class RetrievalSkippedResponse(BaseModel):
+    source: str
+    reason: str
+
+
+class RetrievalFailureResponse(BaseModel):
+    source: str
+    reason: str
+
+
+class RetrievalSourceResponse(BaseModel):
+    source_id: str
+    type: str
+    title: str
+    uri: str
+    chunk_count: int
+    content_hash: str | None
+    manufacturer_or_manual: bool
+    retrieved_at: str | None
+
+
+class RetrievalIngestResponse(BaseModel):
+    status: str
+    local_files_indexed: int
+    urls_indexed: int
+    source_count: int
+    chunk_count: int
+    skipped: list[RetrievalSkippedResponse]
+    failed: list[RetrievalFailureResponse]
+    sources: list[RetrievalSourceResponse]
+
+
 class GoProStatusResponse(BaseModel):
     status: str
     camera_identifier: str

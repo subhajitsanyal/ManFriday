@@ -234,6 +234,10 @@ Implemented slice:
 - Deterministic local Markdown/text ingestion with stable source/chunk IDs,
   title/section extraction, content hashes, timestamps, manual-source detection,
   unsupported-file skips, and file-size limits.
+- `manfriday ingest` CLI command that builds local Markdown/text source and chunk
+  summaries from `RETRIEVAL_LOCAL_DOCS_DIR`.
+- Authenticated `POST /retrieval/ingest` endpoint returning indexed counts,
+  skipped files, failures, source/chunk counts, and per-source summaries.
 - Fixture coverage for local `.md`, `.txt`, unsupported files, size-limit skips,
   stable IDs, source metadata, and chunk metadata.
 

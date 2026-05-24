@@ -18,6 +18,7 @@ from manfriday.api.contracts import (
     PushToTalkReleaseResponse,
     PushToTalkStartRequest,
     PushToTalkStartResponse,
+    RetrievalIngestResponse,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartRequest,
@@ -31,6 +32,8 @@ from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
 from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
+from manfriday.retrieval import ingest_local_documents
+from manfriday.retrieval.summary import ingestion_summary_to_dict
 from manfriday.sessions import Session, SessionStatus, SessionStore
 from manfriday.voice_agent import VoiceAgentWorker
 from manfriday.voice_agent.push_to_talk import PushToTalkCoordinator, PushToTalkError
@@ -203,6 +206,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": __version__,
             "time": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
+
+    @app.post(
+        "/retrieval/ingest",
+        response_model=RetrievalIngestResponse,
+        tags=["retrieval"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def retrieval_ingest() -> RetrievalIngestResponse:
+        summary = ingest_local_documents(app_settings.retrieval_local_docs_dir)
+        return RetrievalIngestResponse(**ingestion_summary_to_dict(summary))
 
     @app.post(
         "/session/start",

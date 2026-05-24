@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -226,6 +227,47 @@ def test_push_to_talk_release_response_and_transcript_include_retrieval_citation
         and event["payload"]["role"] == "assistant"
     )
     assert assistant_transcript["payload"]["citations"][0]["source_uri"] == "notes.txt"
+
+
+def test_debug_session_writes_retrieval_artifact(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            _settings(
+                RETRIEVAL_LOCAL_DOCS_DIR=RETRIEVAL_FIXTURES,
+                DEBUG_ARTIFACTS_DIR=tmp_path,
+            ),
+        ),
+    )
+    headers = _headers()
+    start = client.post(
+        "/session/start",
+        headers=headers,
+        json={"debug_enabled": True},
+    ).json()
+    client.post(
+        "/assistant/push-to-talk/start",
+        headers=headers,
+        json={"session_id": start["session_id"]},
+    )
+
+    released = client.post(
+        "/assistant/push-to-talk/release",
+        headers=headers,
+        json={
+            "session_id": start["session_id"],
+            "user_text": "Where is the hex key?",
+        },
+    )
+
+    assert released.status_code == 200
+    artifact = json.loads(
+        (tmp_path / start["session_id"] / released.json()["turn_id"] / "retrieval.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert artifact["query"] == "Where is the hex key?"
+    assert artifact["selected_chunks"][0]["source_uri"] == "notes.txt"
+    assert artifact["citations"][0]["source_uri"] == "notes.txt"
 
 
 def test_push_to_talk_release_without_speech_discards_turn() -> None:

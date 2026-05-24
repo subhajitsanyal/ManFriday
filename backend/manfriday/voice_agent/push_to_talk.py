@@ -165,6 +165,7 @@ class PushToTalkCoordinator:
                 session_memory=session.memory,
                 turn_id=turn.turn_id,
                 synthesize_audio=clean_user_text is None,
+                debug_enabled=session.debug_enabled,
             )
             return PushToTalkRelease(
                 session_id=session.session_id,

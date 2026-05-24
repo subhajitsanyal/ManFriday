@@ -62,9 +62,27 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class RetrievalSafetyPolicy:
+    confidence: Literal["supported", "low_confidence"]
+    fallback_reason: str
+    instruction: str
+
+
+@dataclass(frozen=True)
 class RetrievalContext:
     query: str
     chunks: tuple[RankedChunk, ...] = ()
+    safety_policy: RetrievalSafetyPolicy = field(
+        default_factory=lambda: RetrievalSafetyPolicy(
+            confidence="low_confidence",
+            fallback_reason="no_retrieval_context",
+            instruction=(
+                "No trusted retrieval context is available. Do not invent procedural, "
+                "tool, safety, setup, torque, installation, or repair instructions; "
+                "ask for the relevant manual/source or more context."
+            ),
+        ),
+    )
 
     @property
     def citations(self) -> tuple[Citation, ...]:

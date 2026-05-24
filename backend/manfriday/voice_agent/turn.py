@@ -1,4 +1,7 @@
+import json
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
@@ -10,6 +13,7 @@ from manfriday.retrieval import Citation, RetrievalContext
 from manfriday.voice_agent.providers import (
     AudioInput,
     ModelTurnRequest,
+    ModelTurnResponse,
     SpeechToTextProvider,
     SynthesizedAudio,
     TextToSpeechProvider,
@@ -48,6 +52,7 @@ class VoiceTurnOrchestrator:
         frame_store: FrameStore,
         event_bus: EventBus,
         retrieval_context_provider: RetrievalContextProvider | None = None,
+        debug_artifacts_dir: Path | None = None,
     ) -> None:
         self._stt_provider = stt_provider
         self._model_provider = model_provider
@@ -55,6 +60,7 @@ class VoiceTurnOrchestrator:
         self._frame_store = frame_store
         self._event_bus = event_bus
         self._retrieval_context_provider = retrieval_context_provider
+        self._debug_artifacts_dir = debug_artifacts_dir
 
     async def run_turn(
         self,
@@ -65,6 +71,7 @@ class VoiceTurnOrchestrator:
         session_memory: dict | None = None,
         turn_id: str | None = None,
         synthesize_audio: bool = True,
+        debug_enabled: bool = False,
     ) -> VoiceTurnResult:
         turn_id = turn_id or f"turn_{uuid4().hex}"
         started_at = perf_counter()
@@ -115,6 +122,7 @@ class VoiceTurnOrchestrator:
         retrieval_context = self._build_retrieval_context(transcript.text)
         citations = retrieval_context.citations if retrieval_context is not None else ()
         citation_payload = [_citation_payload(citation) for citation in citations]
+        retrieval_debug = _retrieval_debug_payload(retrieval_context)
 
         await self._publish(
             "assistant.transcript.delta",
@@ -141,6 +149,11 @@ class VoiceTurnOrchestrator:
                     retrieval_context=retrieval_context,
                 ),
             )
+            response_text, safety_action = _apply_low_confidence_guard(
+                response.text,
+                retrieval_context,
+            )
+            response = ModelTurnResponse(text=response_text)
             timings["model"] = self._elapsed_ms(model_start)
             timings["response_start"] = self._elapsed_ms(started_at)
         except Exception as exc:
@@ -187,19 +200,23 @@ class VoiceTurnOrchestrator:
             timings["tts"] = 0
             tts_audio_ref = None
 
+        assistant_payload = {
+            "turn_id": turn_id,
+            "role": "assistant",
+            "text": response.text,
+            "is_final": True,
+            "frame_id": frame_id,
+            "visual_context": visual_context,
+            "visual_status": visual_status,
+            "citations": citation_payload,
+            "safety_action": safety_action,
+        }
+        if debug_enabled:
+            assistant_payload["retrieval_debug"] = retrieval_debug
         await self._publish(
             "assistant.transcript.delta",
             session_id=session_id,
-            payload={
-                "turn_id": turn_id,
-                "role": "assistant",
-                "text": response.text,
-                "is_final": True,
-                "frame_id": frame_id,
-                "visual_context": visual_context,
-                "visual_status": visual_status,
-                "citations": citation_payload,
-            },
+            payload=assistant_payload,
         )
         timings["total"] = self._elapsed_ms(started_at)
         await self._publish(
@@ -223,13 +240,25 @@ class VoiceTurnOrchestrator:
             reason="turn_completed",
         )
         if session_memory is not None:
-            session_memory.setdefault("turns", []).append(
-                {
-                    "turn_id": turn_id,
-                    "user_text": transcript.text,
-                    "assistant_text": response.text,
-                    "frame_id": frame_id,
-                    "citations": citation_payload,
+            memory_turn = {
+                "turn_id": turn_id,
+                "user_text": transcript.text,
+                "assistant_text": response.text,
+                "frame_id": frame_id,
+                "citations": citation_payload,
+            }
+            if safety_action != "none":
+                memory_turn["safety_action"] = safety_action
+            if debug_enabled:
+                memory_turn["retrieval_debug"] = retrieval_debug
+            session_memory.setdefault("turns", []).append(memory_turn)
+        if debug_enabled:
+            self._write_retrieval_debug_artifact(
+                session_id=session_id,
+                turn_id=turn_id,
+                payload={
+                    **retrieval_debug,
+                    "safety_action": safety_action,
                 },
             )
         return VoiceTurnResult(
@@ -250,6 +279,22 @@ class VoiceTurnOrchestrator:
         if self._retrieval_context_provider is None:
             return None
         return self._retrieval_context_provider.build(query)
+
+    def _write_retrieval_debug_artifact(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        payload: dict,
+    ) -> None:
+        if self._debug_artifacts_dir is None:
+            return
+        artifact_dir = self._debug_artifacts_dir / session_id / turn_id
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "retrieval.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
     async def _publish(self, event_type: str, *, session_id: str, payload: dict) -> None:
         await self._event_bus.publish(
@@ -314,3 +359,59 @@ def _citation_payload(citation: Citation) -> dict:
         "section": citation.section,
         "score": citation.score,
     }
+
+
+def _retrieval_debug_payload(context: RetrievalContext | None) -> dict:
+    if context is None:
+        return {
+            "query": None,
+            "confidence": "not_configured",
+            "fallback_reason": "retrieval_disabled",
+            "selected_chunks": [],
+            "citations": [],
+        }
+    return {
+        "query": context.query,
+        "confidence": context.safety_policy.confidence,
+        "fallback_reason": context.safety_policy.fallback_reason,
+        "selected_chunks": [
+            {
+                "chunk_id": result.chunk.chunk_id,
+                "source_id": result.source.source_id,
+                "source_title": result.source.title,
+                "source_uri": result.source.uri,
+                "section": result.chunk.section,
+                "score": result.score,
+                "bm25_score": result.bm25_score,
+                "keyword_score": result.keyword_score,
+                "vector_score": result.vector_score,
+                "combined_score": result.combined_score,
+            }
+            for result in context.chunks
+        ],
+        "citations": [_citation_payload(citation) for citation in context.citations],
+    }
+
+
+def _apply_low_confidence_guard(
+    text: str,
+    context: RetrievalContext | None,
+) -> tuple[str, str]:
+    if context is None or context.safety_policy.confidence != "low_confidence":
+        return text, "none"
+    if not _looks_like_procedural_tool_instruction(text):
+        return text, "none"
+    return (
+        "I do not have enough trusted retrieval context to answer that safely. "
+        "Please add or open the relevant manual/source, then ask again with the "
+        "specific model, part, or procedure.",
+        "replaced_low_confidence_tool_instruction",
+    )
+
+
+def _looks_like_procedural_tool_instruction(text: str) -> bool:
+    imperative = re.compile(
+        r"\b(press|hold|turn|cut|drill|wire|remove|install|set|configure|tighten|loosen)\b",
+        re.IGNORECASE,
+    )
+    return bool(imperative.search(text))

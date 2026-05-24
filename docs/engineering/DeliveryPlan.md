@@ -328,6 +328,27 @@ Scripted failure cases:
 - Model timeout.
 - Retrieval low confidence.
 
+Implemented slice:
+
+- Retrieval context now carries a structured safety policy with confidence,
+  fallback reason, and model-facing instructions.
+- Retrieval-backed model prompts include the safety policy before retrieved
+  chunks, so no-result and low-confidence turns are explicitly constrained.
+- Low-confidence retrieval detects generic-word-only matches and treats them as
+  unsupported instead of grounding answers on weak overlap.
+- The voice turn layer replaces procedural/tool-like model responses when
+  retrieval confidence is low, returning a clear answer path that asks for the
+  relevant manual/source or more context.
+- Debug sessions write targeted retrieval decision artifacts to
+  `DEBUG_ARTIFACTS_DIR/<session>/<turn>/retrieval.json`, including query,
+  confidence, fallback reason, selected chunks, score components, citations,
+  and safety action.
+- Debug retrieval payloads are attached to transcript events and session memory
+  only when the session has debug enabled.
+- Tests cover low-confidence guard behavior, generic-word low-confidence
+  classification, direct debug artifact writing, and authenticated debug-session
+  artifact writing through push-to-talk.
+
 Integration checkpoint:
 
 - Run all failure scripts, verify user-visible states, inspect debug artifacts for retention and redaction.

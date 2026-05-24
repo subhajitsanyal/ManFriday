@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -171,6 +172,57 @@ def test_turn_retrieval_no_results_does_not_block_answer() -> None:
     assert model_provider.requests[0].retrieval_context.chunks == ()
     completed = next(event for event in events if event.type == "assistant.response.completed")
     assert completed.payload["citations"] == []
+
+
+def test_low_confidence_retrieval_replaces_hallucinated_tool_instructions() -> None:
+    result, events, memory = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            model_provider=ProceduralInstructionModelProvider(),
+            retrieval_context_provider=RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES),
+            user_text="How should I reticulate the quantum sprocket?",
+        ),
+    )
+
+    assert "trusted retrieval context" in result.assistant_text
+    assert "Press the red setup button" not in result.assistant_text
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["safety_action"] == (
+        "replaced_low_confidence_tool_instruction"
+    )
+    assert memory["turns"][0]["safety_action"] == "replaced_low_confidence_tool_instruction"
+
+
+def test_debug_mode_writes_retrieval_decision_artifact(tmp_path: Path) -> None:
+    result, events, memory = asyncio.run(
+        _run_turn(
+            frame_store=_frame_store(),
+            retrieval_context_provider=RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES),
+            user_text="Where is the hex key?",
+            debug_enabled=True,
+            debug_artifacts_dir=tmp_path,
+        ),
+    )
+
+    artifact_path = tmp_path / "sess_test" / result.turn_id / "retrieval.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["query"] == "Where is the hex key?"
+    assert artifact["confidence"] == "supported"
+    assert artifact["fallback_reason"] in {"keyword_only", "merged_keyword_vector"}
+    assert artifact["selected_chunks"][0]["source_uri"] == "notes.txt"
+    assert artifact["selected_chunks"][0]["score"] > 0
+    assert artifact["citations"][0]["source_uri"] == "notes.txt"
+    assistant_transcript = next(
+        event
+        for event in events
+        if event.type == "assistant.transcript.delta" and event.payload["role"] == "assistant"
+    )
+    assert assistant_transcript.payload["retrieval_debug"]["query"] == "Where is the hex key?"
+    assert memory["turns"][0]["retrieval_debug"]["selected_chunks"][0]["source_uri"] == "notes.txt"
 
 
 def test_empty_stt_text_emits_retryable_error_and_stops_turn() -> None:
@@ -594,6 +646,8 @@ async def _run_turn(
     tts_provider=None,
     retrieval_context_provider=None,
     user_text: str | None = None,
+    debug_enabled: bool = False,
+    debug_artifacts_dir: Path | None = None,
 ):
     session_id = "sess_test"
     memory: dict = {}
@@ -606,12 +660,14 @@ async def _run_turn(
         frame_store=frame_store,
         event_bus=event_bus,
         retrieval_context_provider=retrieval_context_provider,
+        debug_artifacts_dir=debug_artifacts_dir,
     )
     result = await orchestrator.run_turn(
         session_id=session_id,
         audio=AudioInput(content=b"audio"),
         user_text=user_text,
         session_memory=memory,
+        debug_enabled=debug_enabled,
     )
     return result, _drain_events(queue), memory
 
@@ -727,6 +783,13 @@ class CapturingModelProvider:
     def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
         self.requests.append(request)
         return ModelTurnResponse(text="captured response")
+
+
+class ProceduralInstructionModelProvider:
+    def complete_turn(self, request: ModelTurnRequest) -> ModelTurnResponse:
+        return ModelTurnResponse(
+            text="Press the red setup button, then configure the calibration depth.",
+        )
 
 
 class CountingTtsProvider:

@@ -223,9 +223,19 @@ def _model_prompt(request_model: ModelTurnRequest) -> str:
 
 def _retrieval_prompt(request_model: ModelTurnRequest) -> str:
     context = request_model.retrieval_context
-    if context is None or not context.chunks:
+    if context is None:
         return "Retrieved context: none.\n"
-    lines = ["Retrieved context:"]
+    lines = [
+        "Retrieval safety policy:",
+        f"- confidence: {context.safety_policy.confidence}",
+        f"- fallback_reason: {context.safety_policy.fallback_reason}",
+        f"- instruction: {context.safety_policy.instruction}",
+    ]
+    if not context.chunks:
+        lines.append("Retrieved context: none.")
+        lines.append("")
+        return "\n".join(lines)
+    lines.append("Retrieved context:")
     for citation, result in zip(context.citations, context.chunks, strict=True):
         section = f", section: {citation.section}" if citation.section else ""
         lines.append(

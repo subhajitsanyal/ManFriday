@@ -2,23 +2,23 @@
 
 ## Current Readiness
 
-Current phase: Phase 2, GoPro And Frame Pipeline.
+Current phase: Phase 6, End-To-End MVP Validation.
 
-MVP readiness status: Not ready. Phase 0 is complete, and the Phase 1 backend
-control plane is in place. Android can start/end backend sessions, connect to
-the returned LiveKit room, and open the authenticated WebSocket event stream.
-Local manual LiveKit validation, real GoPro preview/sampler work, secure
-settings storage, and Android tests are still pending.
+MVP readiness status: Not ready. Fixture-backed backend, retrieval, safety,
+debug, and Android build gates pass. Clean current-code backend startup works.
+Local manual LiveKit/agent-worker validation, real GoPro preview/sampler
+validation, physical-device STT, and final end-to-end demo evidence are still
+pending.
 
 ## Gate Summary
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Phase 1 auth/session tests passing |
-| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | LiveKit/WebSocket wiring implemented; secure storage and tests pending |
+| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Passing: 113 tests, ruff, Phase 5 smoke |
+| Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Unit/build gate passing; encrypted settings storage remains hardening |
 | End-to-end gate | Android authenticates, joins LiveKit, starts session/GoPro, sees frames, asks spoken question, sees citations, safety constrains high-risk prompt, latency target met | Not started |
 | Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | Fixture frame API passing; real hardware not started |
-| Privacy/debug gate | Debug artifacts targeted; no continuous audio or sampled-frame persistence; redaction and retention pass | Not started |
+| Privacy/debug gate | Debug artifacts targeted; no continuous audio or sampled-frame persistence; redaction and retention pass | Phase 5 debug targeting, redaction, and retention passing |
 
 ## Phase Exit Checklist
 
@@ -118,7 +118,7 @@ settings storage, and Android tests are still pending.
 ### Phase 6
 
 - [x] Phase 6 local validation runbook exists.
-- [ ] Clean startup from runbook works.
+- [x] Clean startup from runbook works.
 - [ ] LiveKit, FastAPI, and agent worker start manually.
 - [ ] Android connects to backend and LiveKit.
 - [ ] GoPro preview starts from Android.
@@ -130,6 +130,22 @@ settings storage, and Android tests are still pending.
 - [ ] Latency report is complete.
 - [ ] Known issues are documented.
 - [ ] Stretch work is separated from MVP completion.
+
+Validation notes:
+
+- 2026-05-24 fixture gate passed: backend `pytest` reported 113 passing tests,
+  ruff reported no issues, `manfriday.phase5_failure_smoke` passed, and Android
+  `:app:testDebugUnitTest :app:assembleDebug` built successfully.
+- 2026-05-24 clean current-code startup passed on port 8001 with real
+  `backend/.env`; `GET /health` returned `status=ok`.
+- 2026-05-24 real configured retrieval ingest completed with zero indexed docs
+  because `../knowledge/local-docs` only contained `.gitkeep`.
+- 2026-05-24 fixture retrieval smoke passed on port 8002 using
+  `/private/tmp/manfriday-retrieval-index`; `Where is the hex key?` returned
+  `notes.txt` as the top result with BM25, keyword, vector, and combined scores.
+- Existing port 8000 process answered `/health` but returned 404 for
+  `/retrieval/query`; use a fresh current-code backend process for Phase 6
+  validation.
 
 ## Fixture Strategy
 

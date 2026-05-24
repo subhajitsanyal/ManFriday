@@ -17,6 +17,12 @@ def test_retrieval_ingest_requires_bearer_auth() -> None:
     assert client.post("/retrieval/ingest").status_code == 401
 
 
+def test_retrieval_query_requires_bearer_auth() -> None:
+    client = TestClient(create_app(_settings()))
+
+    assert client.post("/retrieval/query", json={"query": "hex key"}).status_code == 401
+
+
 def test_retrieval_ingest_returns_per_source_summary() -> None:
     client = TestClient(create_app(_settings()))
 
@@ -55,6 +61,71 @@ def test_retrieval_ingest_reports_missing_directory() -> None:
     assert body["source_count"] == 0
     assert body["chunk_count"] == 0
     assert body["failed"][0]["reason"] == "directory_not_found"
+
+
+def test_retrieval_query_returns_ranked_chunks() -> None:
+    client = TestClient(create_app(_settings()))
+
+    response = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "hex key", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "hex key"
+    assert body["source_count"] == 2
+    assert body["chunk_count"] == 4
+    assert body["result_count"] == 1
+    result = body["results"][0]
+    assert result["source_uri"] == "notes.txt"
+    assert result["source_type"] == "local_file"
+    assert result["text"] == (
+        "Use the blue bin for spare clamps.\n\n"
+        "The small hex key belongs with the camera mount."
+    )
+    assert result["score"] > 0
+    assert result["bm25_score"] > 0
+    assert result["keyword_score"] > 0
+
+
+def test_retrieval_query_returns_stable_ordering_and_manual_preference() -> None:
+    client = TestClient(create_app(_settings()))
+
+    first = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "camera mount", "limit": 10},
+    ).json()
+    second = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "camera mount", "limit": 10},
+    ).json()
+
+    assert [result["chunk_id"] for result in first["results"]] == [
+        result["chunk_id"] for result in second["results"]
+    ]
+    assert first["results"][0]["source_uri"] == "workbench_manual.md"
+    assert first["results"][0]["manufacturer_or_manual"] is True
+
+
+def test_retrieval_query_handles_missing_directory() -> None:
+    client = TestClient(create_app(_settings(RETRIEVAL_LOCAL_DOCS_DIR=FIXTURES / "missing")))
+
+    response = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "camera"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_count"] == 0
+    assert body["chunk_count"] == 0
+    assert body["result_count"] == 0
+    assert body["results"] == []
 
 
 def test_manfriday_ingest_cli_outputs_summary(capsys, monkeypatch) -> None:

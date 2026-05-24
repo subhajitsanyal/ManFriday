@@ -19,6 +19,8 @@ from manfriday.api.contracts import (
     PushToTalkStartRequest,
     PushToTalkStartResponse,
     RetrievalIngestResponse,
+    RetrievalQueryRequest,
+    RetrievalQueryResponse,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartRequest,
@@ -32,7 +34,7 @@ from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
 from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
-from manfriday.retrieval import ingest_local_documents
+from manfriday.retrieval import build_keyword_index, ingest_local_documents
 from manfriday.retrieval.summary import ingestion_summary_to_dict
 from manfriday.sessions import Session, SessionStatus, SessionStore
 from manfriday.voice_agent import VoiceAgentWorker
@@ -216,6 +218,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def retrieval_ingest() -> RetrievalIngestResponse:
         summary = ingest_local_documents(app_settings.retrieval_local_docs_dir)
         return RetrievalIngestResponse(**ingestion_summary_to_dict(summary))
+
+    @app.post(
+        "/retrieval/query",
+        response_model=RetrievalQueryResponse,
+        tags=["retrieval"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def retrieval_query(request: RetrievalQueryRequest) -> RetrievalQueryResponse:
+        summary = ingest_local_documents(app_settings.retrieval_local_docs_dir)
+        index = build_keyword_index(sources=summary.sources, chunks=summary.chunks)
+        results = index.query(request.query, limit=request.limit)
+        return RetrievalQueryResponse(
+            query=request.query,
+            source_count=len(summary.sources),
+            chunk_count=len(summary.chunks),
+            result_count=len(results),
+            results=[
+                {
+                    "chunk_id": result.chunk.chunk_id,
+                    "source_id": result.source.source_id,
+                    "source_type": result.source.type,
+                    "source_title": result.source.title,
+                    "source_uri": result.source.uri,
+                    "manufacturer_or_manual": result.source.manufacturer_or_manual,
+                    "chunk_index": result.chunk.chunk_index,
+                    "section": result.chunk.section,
+                    "text": result.chunk.text,
+                    "score": result.score,
+                    "bm25_score": result.bm25_score,
+                    "keyword_score": result.keyword_score,
+                }
+                for result in results
+            ],
+        )
 
     @app.post(
         "/session/start",

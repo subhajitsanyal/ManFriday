@@ -81,9 +81,11 @@ settings storage, and Android tests are still pending.
 - [x] Markdown/text ingestion passes fixture tests.
 - [x] `manfriday ingest` builds local Markdown/text metadata.
 - [x] `POST /retrieval/ingest` returns authenticated per-source summary.
+- [x] BM25/keyword index works for ingested Markdown/text chunks.
+- [x] Authenticated `POST /retrieval/query` returns ranked chunks.
+- [x] Local/manual source preference is covered for ranked chunk ties.
 - [ ] PDF ingestion applies page and size limits.
 - [ ] Configured URL ingestion uses YAML and reports per-source failures.
-- [ ] BM25 index works.
 - [ ] FAISS vector index persists locally.
 - [ ] Merge/rerank applies local/manual source preference.
 - [ ] Agent prompt includes retrieval context.

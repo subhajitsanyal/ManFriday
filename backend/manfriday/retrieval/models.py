@@ -38,6 +38,16 @@ class ChunkMetadata:
 
 
 @dataclass(frozen=True)
+class RankedChunk:
+    chunk: ChunkMetadata
+    source: SourceMetadata
+    score: float
+    bm25_score: float
+    keyword_score: float
+    manual_boost: float = 0.0
+
+
+@dataclass(frozen=True)
 class SourceIngestionResult:
     source: SourceMetadata
     chunks: tuple[ChunkMetadata, ...]

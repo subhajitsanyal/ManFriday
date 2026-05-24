@@ -238,8 +238,16 @@ Implemented slice:
   summaries from `RETRIEVAL_LOCAL_DOCS_DIR`.
 - Authenticated `POST /retrieval/ingest` endpoint returning indexed counts,
   skipped files, failures, source/chunk counts, and per-source summaries.
+- Dependency-light pure-Python BM25/keyword index built from current
+  `SourceMetadata` and `ChunkMetadata`, including section metadata in searchable
+  text and deterministic local/manual source preference.
+- Authenticated `POST /retrieval/query` endpoint returning ranked chunks,
+  source metadata, score components, and stable result ordering.
 - Fixture coverage for local `.md`, `.txt`, unsupported files, size-limit skips,
   stable IDs, source metadata, and chunk metadata.
+- Query coverage for keyword matching, section matching, stable ordering,
+  local/manual source preference, authenticated API access, and empty/missing
+  index behavior.
 
 Integration checkpoint:
 
@@ -325,7 +333,7 @@ Demo script:
 | Frame metadata and `frame_id` semantics | Voice, Android, QA | GoPro And Frame Pipeline | Phase 2 | Implemented for fixture frames |
 | Fixture frame/video strategy | GoPro, Android, Voice, QA | QA, Release, And Integration | Phase 2 | Fixture JPEG path and sampler boundary implemented |
 | Push-to-talk implementation pattern | Android, Voice, QA | TPM decision with Voice/Android | Phase 3 | Open decision |
-| Retrieval result/citation schema | Voice, Android, QA | Retrieval, Safety, And Debug | Phase 4 | Not started |
+| Retrieval result/citation schema | Voice, Android, QA | Retrieval, Safety, And Debug | Phase 4 | Ranked chunk query contract implemented; citation rendering pending |
 | Debug artifact redaction contract | Backend, Voice, Retrieval/Safety, QA | Retrieval, Safety, And Debug | Phase 5 | Not started |
 
 ## Immediate Next Actions

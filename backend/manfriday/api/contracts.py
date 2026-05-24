@@ -100,6 +100,34 @@ class RetrievalIngestResponse(BaseModel):
     sources: list[RetrievalSourceResponse]
 
 
+class RetrievalQueryRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class RetrievalChunkResponse(BaseModel):
+    chunk_id: str
+    source_id: str
+    source_type: str
+    source_title: str
+    source_uri: str
+    manufacturer_or_manual: bool
+    chunk_index: int
+    section: str | None
+    text: str
+    score: float
+    bm25_score: float
+    keyword_score: float
+
+
+class RetrievalQueryResponse(BaseModel):
+    query: str
+    source_count: int
+    chunk_count: int
+    result_count: int
+    results: list[RetrievalChunkResponse]
+
+
 class GoProStatusResponse(BaseModel):
     status: str
     camera_identifier: str

@@ -1,5 +1,6 @@
 package com.manfriday.android
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -7,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +36,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -68,6 +77,7 @@ fun ManFridayApp() {
     var webSocketStatus by rememberSaveable { mutableStateOf("Disconnected") }
     var lastEvent by rememberSaveable { mutableStateOf("None") }
     var frameStatus by rememberSaveable { mutableStateOf("No frame") }
+    var latestFrameBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isFrameLoading by rememberSaveable { mutableStateOf(false) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     val audioClient = remember { LiveKitAudioClient(context) }
@@ -93,21 +103,32 @@ fun ManFridayApp() {
                     webSocketStatus = webSocketStatus,
                     lastEvent = lastEvent,
                     frameStatus = frameStatus,
+                    latestFrameBitmap = latestFrameBitmap,
                     isFrameLoading = isFrameLoading,
                     onRefreshFrame = {
                         scope.launch {
                             isFrameLoading = true
                             frameStatus = "Loading latest frame"
                             runCatching {
-                                ManFridayBackendClient.latestFrame(
+                                val frame = ManFridayBackendClient.latestFrame(
                                     backendUrl = backendUrl,
                                     localSecret = localSecret,
                                     sessionId = activeSession.sessionId,
                                 )
+                                val bitmap = frame.jpegUrl?.let { jpegUrl ->
+                                    ManFridayBackendClient.frameJpeg(
+                                        backendUrl = backendUrl,
+                                        localSecret = localSecret,
+                                        jpegUrl = jpegUrl,
+                                    )
+                                }
+                                frame to bitmap
                             }.onSuccess {
-                                frameStatus = it.toStatusText()
+                                frameStatus = it.first.toStatusText()
+                                latestFrameBitmap = it.second
                             }.onFailure {
                                 frameStatus = it.message ?: "Latest frame failed"
+                                latestFrameBitmap = null
                             }
                             isFrameLoading = false
                         }
@@ -117,16 +138,26 @@ fun ManFridayApp() {
                             isFrameLoading = true
                             frameStatus = "Looking"
                             runCatching {
-                                ManFridayBackendClient.lookFrame(
+                                val frame = ManFridayBackendClient.lookFrame(
                                     backendUrl = backendUrl,
                                     localSecret = localSecret,
                                     sessionId = activeSession.sessionId,
                                 )
+                                val bitmap = frame.jpegUrl?.let { jpegUrl ->
+                                    ManFridayBackendClient.frameJpeg(
+                                        backendUrl = backendUrl,
+                                        localSecret = localSecret,
+                                        jpegUrl = jpegUrl,
+                                    )
+                                }
+                                frame to bitmap
                             }.onSuccess {
-                                frameStatus = it.toStatusText()
+                                frameStatus = it.first.toStatusText()
+                                latestFrameBitmap = it.second
                                 lastEvent = "frame.look"
                             }.onFailure {
                                 frameStatus = it.message ?: "Look failed"
+                                latestFrameBitmap = null
                             }
                             isFrameLoading = false
                         }
@@ -182,6 +213,7 @@ fun ManFridayApp() {
                                 )
                             }.onSuccess {
                                 session = null
+                                latestFrameBitmap = null
                                 setupStatus = "Session ended"
                                 liveKitStatus = "Disconnected"
                                 webSocketStatus = "Disconnected"
@@ -233,15 +265,25 @@ fun ManFridayApp() {
                                 isFrameLoading = true
                                 frameStatus = "Loading latest frame"
                                 runCatching {
-                                    ManFridayBackendClient.latestFrame(
+                                    val frame = ManFridayBackendClient.latestFrame(
                                         backendUrl = backendUrl,
                                         localSecret = localSecret,
                                         sessionId = it.sessionId,
                                     )
+                                    val bitmap = frame.jpegUrl?.let { jpegUrl ->
+                                        ManFridayBackendClient.frameJpeg(
+                                            backendUrl = backendUrl,
+                                            localSecret = localSecret,
+                                            jpegUrl = jpegUrl,
+                                        )
+                                    }
+                                    frame to bitmap
                                 }.onSuccess { frame ->
-                                    frameStatus = frame.toStatusText()
+                                    frameStatus = frame.first.toStatusText()
+                                    latestFrameBitmap = frame.second
                                 }.onFailure {
                                     frameStatus = "No frame"
+                                    latestFrameBitmap = null
                                 }
                                 isFrameLoading = false
                             }.onFailure {
@@ -314,6 +356,7 @@ private fun ActiveCopilotScreen(
     webSocketStatus: String,
     lastEvent: String,
     frameStatus: String,
+    latestFrameBitmap: ImageBitmap?,
     isFrameLoading: Boolean,
     onRefreshFrame: () -> Unit,
     onLook: () -> Unit,
@@ -327,6 +370,7 @@ private fun ActiveCopilotScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -350,6 +394,18 @@ private fun ActiveCopilotScreen(
             StatusLine(label = "Last event", value = lastEvent)
             StatusLine(label = "GoPro", value = "Pending")
             StatusLine(label = "Visual", value = frameStatus)
+
+            latestFrameBitmap?.let { bitmap ->
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Latest frame",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .background(Color.Black),
+                    contentScale = ContentScale.Fit,
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -444,6 +500,7 @@ private data class FrameMetadata(
     val height: Int?,
     val source: String?,
     val mimeType: String?,
+    val jpegUrl: String?,
 ) {
     fun toStatusText(now: Instant = Instant.now()): String {
         val parts = mutableListOf<String>()
@@ -454,6 +511,7 @@ private data class FrameMetadata(
         capturedAt?.let { parts += "${Duration.between(it, now).toHumanAge()} old" }
         source?.takeIf { it.isNotBlank() }?.let { parts += it }
         mimeType?.takeIf { it.isNotBlank() }?.let { parts += it }
+        jpegUrl?.takeIf { it.isNotBlank() }?.let { parts += "JPEG ready" }
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" | ") ?: "Frame metadata received"
     }
 }
@@ -544,6 +602,38 @@ private object ManFridayBackendClient {
         parseFrameMetadata(response)
     }
 
+    suspend fun frameJpeg(
+        backendUrl: String,
+        localSecret: String,
+        jpegUrl: String,
+    ): ImageBitmap = withContext(Dispatchers.IO) {
+        val resolvedUrl = resolveBackendUrl(backendUrl, jpegUrl)
+        val connection = (URL(resolvedUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 5_000
+            readTimeout = 10_000
+            setRequestProperty("Authorization", "Bearer $localSecret")
+            setRequestProperty("Accept", "image/jpeg")
+        }
+        try {
+            val stream = if (connection.responseCode in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+            val bytes = stream.use { it.readBytes() }
+            if (connection.responseCode !in 200..299) {
+                val errorText = bytes.toString(StandardCharsets.UTF_8)
+                throw IllegalStateException("JPEG returned ${connection.responseCode}: $errorText")
+            }
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: throw IllegalStateException("JPEG response could not be decoded")
+            bitmap.asImageBitmap()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun request(
         method: String,
         url: String,
@@ -585,7 +675,13 @@ private object ManFridayBackendClient {
             height = frame.firstInt("height", "image_height"),
             source = frame.firstString("source", "camera", "device"),
             mimeType = frame.firstString("mime_type", "content_type", "format"),
+            jpegUrl = frame.firstString("jpeg_url", "jpg_url", "image_url", "url"),
         )
+    }
+
+    private fun resolveBackendUrl(backendUrl: String, pathOrUrl: String): String {
+        val base = URL("${backendUrl.trimEnd('/')}/")
+        return URL(base, pathOrUrl).toString()
     }
 }
 

@@ -46,14 +46,15 @@ settings storage, and Android tests are still pending.
 ### Phase 2
 
 - [x] GoPro status and error models are implemented.
+- [x] Backend GoPro controller boundary exists with fixture and Open GoPro skeletons.
 - [x] Start/stop preview endpoints are idempotent.
-- [ ] Reconfigure requires `confirm_clear_credentials: true`.
-- [ ] Fixture frame sampler tests pass.
+- [x] Reconfigure requires `confirm_clear_credentials: true`.
+- [x] Fixture frame sampler tests pass.
 - [ ] Real GoPro preview produces sampled frames at 2 FPS.
 - [x] `/frame/latest` and `/frame/{frame_id}.jpg` work.
 - [x] `POST /frame/look` pins for 60 seconds.
-- [x] Android displays latest frame metadata and age.
-- [ ] Visual degraded state appears within 5 seconds of sampler failure.
+- [x] Android displays latest frame image, metadata, and age.
+- [x] Fixture visual degraded state appears within 5 seconds of sampler failure.
 
 ### Phase 3
 

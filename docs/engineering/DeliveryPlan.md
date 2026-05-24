@@ -122,18 +122,27 @@ Implemented fixture-backed slice:
 
 - Authenticated `GET /gopro/status`, `POST /gopro/start-preview`, and
   `POST /gopro/stop-preview`.
+- Authenticated `POST /gopro/reconfigure` and
+  `POST /gopro/reconfigure/cancel` with explicit credential-clear
+  confirmation.
+- Backend `GoProController` boundary with fixture and Open GoPro skeleton
+  implementations; the Open GoPro skeleton reports saved COHN credential
+  presence without starting real hardware preview yet.
 - In-memory fixture frame store with stable `frame_id`, metadata, JPEG bytes,
   stale-frame detection, and Look pinning.
+- Fixture frame sampler boundary with idempotent preview start/stop and
+  degraded-state reporting for sampler failure or stale frames.
 - Authenticated `GET /frame/latest`, `GET /frame/{frame_id}.jpg`, and
   `POST /frame/look`.
 - Session-scoped `frame.latest.updated` and `frame.pinned` WebSocket events.
-- Android active screen can refresh latest frame metadata and trigger Look.
+- Android active screen can refresh and display the authenticated latest JPEG,
+  frame metadata, age, and trigger Look.
 
 Remaining Phase 2 work:
 
-- Real GoPro COHN credential reuse, preview start/stop, and reconfigure flow.
-- `ffmpeg` UDP frame sampler with 2 FPS cadence and restart/degraded handling.
-- Android image loading from `jpeg_url`, not just metadata display.
+- Real Open GoPro connection, reachability checks, preview start/stop, and
+  hardware provisioning for the reconfigure flow.
+- `ffmpeg` UDP frame sampler with 2 FPS cadence and restart handling.
 - Local hardware validation of sampler failure and degraded state timing.
 
 Integration checkpoint:
@@ -263,7 +272,7 @@ Demo script:
 | LiveKit room/session naming convention | Android, Voice, QA | Backend Control Plane | Phase 1 | Implemented |
 | Event envelope and assistant state events | Android, Voice, Retrieval/Safety, QA | Backend Control Plane | Phase 1 | Implemented for session snapshots |
 | Frame metadata and `frame_id` semantics | Voice, Android, QA | GoPro And Frame Pipeline | Phase 2 | Implemented for fixture frames |
-| Fixture frame/video strategy | GoPro, Android, Voice, QA | QA, Release, And Integration | Phase 2 | Fixture JPEG path implemented; sampler fixture pending |
+| Fixture frame/video strategy | GoPro, Android, Voice, QA | QA, Release, And Integration | Phase 2 | Fixture JPEG path and sampler boundary implemented |
 | Push-to-talk implementation pattern | Android, Voice, QA | TPM decision with Voice/Android | Phase 3 | Open decision |
 | Retrieval result/citation schema | Voice, Android, QA | Retrieval, Safety, And Debug | Phase 4 | Not started |
 | Debug artifact redaction contract | Backend, Voice, Retrieval/Safety, QA | Retrieval, Safety, And Debug | Phase 5 | Not started |
@@ -271,6 +280,7 @@ Demo script:
 ## Immediate Next Actions
 
 1. Add real GoPro service boundary for COHN credential reuse and preview state.
-2. Add `ffmpeg` sampler interface with fixture process tests.
-3. Add Android image loading from authenticated `jpeg_url`.
+2. Replace the fixture sampler internals with an `ffmpeg` sampler implementation
+   behind the existing sampler boundary.
+3. Add sampler restart/backoff behavior around `ffmpeg` process exits.
 4. Run local manual Phase 1 and Phase 2 checkpoints with LiveKit and hardware.

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
 
     gopro_serial_suffix: str = Field(default="2312", alias="GOPRO_SERIAL_SUFFIX")
     gopro_open_gopro_version: str = Field(default="0.22.0", alias="GOPRO_OPEN_GOPRO_VERSION")
+    gopro_controller: Literal["fixture", "open_gopro"] = Field(
+        default="fixture",
+        alias="GOPRO_CONTROLLER",
+    )
     gopro_cohn_credentials_path: Path = Field(
         default=Path(".state/gopro/cohn.json"),
         alias="GOPRO_COHN_CREDENTIALS_PATH",

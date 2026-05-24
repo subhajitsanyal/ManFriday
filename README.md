@@ -35,9 +35,12 @@ Existing GoPro exploration code has been moved to:
 ```
 
 The current implementation priority is Phase 2: GoPro and frame pipeline. A
-fixture-backed backend frame API is in place, and the Android active screen can
-refresh latest frame metadata and trigger Look. The next steps are real GoPro
-preview/sampling, Android image loading, and local manual validation.
+fixture-backed backend frame API and sampler boundary are in place, including
+Look pinning, reconfigure confirmation scaffolding, and degraded-state handling.
+The backend also has a GoPro controller boundary with fixture and Open GoPro
+skeleton implementations. The Android active screen can refresh and render the
+authenticated latest JPEG. The next steps are real Open GoPro connection and
+preview control, UDP preview sampling, and local hardware validation.
 
 ## Backend Local Development
 

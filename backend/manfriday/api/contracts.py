@@ -47,6 +47,17 @@ class GoProStatusResponse(BaseModel):
     message: str | None
 
 
+class GoProReconfigureRequest(BaseModel):
+    confirm_clear_credentials: bool = False
+
+
+class GoProReconfigureResponse(BaseModel):
+    status: str
+    job_id: str | None
+    started_at: datetime | None
+    message: str | None
+
+
 class FrameMetadataResponse(BaseModel):
     frame_id: str
     captured_at: datetime

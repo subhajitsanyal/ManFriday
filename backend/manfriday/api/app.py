@@ -9,6 +9,8 @@ from manfriday import __version__
 from manfriday.api.contracts import (
     FrameMetadataResponse,
     FrameUnavailableResponse,
+    GoProReconfigureRequest,
+    GoProReconfigureResponse,
     GoProStatusResponse,
     LiveKitResponse,
     LookResponse,
@@ -23,7 +25,7 @@ from manfriday.config.settings import Settings, get_settings
 from manfriday.events import EventBus, EventEnvelope
 from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
-from manfriday.gopro import GoProService
+from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
 from manfriday.sessions import Session, SessionStatus, SessionStore
 
@@ -76,6 +78,15 @@ def _gopro_response(status_model) -> GoProStatusResponse:
     )
 
 
+def _gopro_reconfigure_response(status_model) -> GoProReconfigureResponse:
+    return GoProReconfigureResponse(
+        status=status_model.status.value,
+        job_id=status_model.job_id,
+        started_at=status_model.started_at,
+        message=status_model.message,
+    )
+
+
 def _not_found(session_id: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -108,13 +119,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         look_ttl_seconds=app_settings.frame_look_ttl_seconds,
         stale_after_seconds=app_settings.frame_stale_after_seconds,
     )
-    gopro_service = GoProService(settings=app_settings, frame_store=frame_store)
+    gopro_controller = build_gopro_controller(app_settings)
+    gopro_service = GoProService(
+        settings=app_settings,
+        frame_store=frame_store,
+        controller=gopro_controller,
+    )
 
     app.state.settings = app_settings
     app.state.session_store = store
     app.state.event_bus = event_bus
     app.state.livekit_token_issuer = token_issuer
     app.state.frame_store = frame_store
+    app.state.gopro_controller = gopro_controller
     app.state.gopro_service = gopro_service
 
     @app.exception_handler(HTTPException)
@@ -244,6 +261,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def stop_preview() -> GoProStatusResponse:
         return _gopro_response(gopro_service.stop_preview())
 
+    @app.post(
+        "/gopro/reconfigure",
+        response_model=GoProReconfigureResponse,
+        tags=["gopro"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def reconfigure_gopro(
+        request: GoProReconfigureRequest,
+    ) -> GoProReconfigureResponse:
+        if not request.confirm_clear_credentials:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": {
+                        "code": "confirmation_required",
+                        "message": "confirm_clear_credentials must be true to reconfigure GoPro.",
+                        "retryable": False,
+                    },
+                },
+            )
+        reconfigure_status = gopro_service.reconfigure()
+        await publish_to_active_sessions(
+            "gopro.reconfigure.started",
+            _gopro_reconfigure_response(reconfigure_status).model_dump(mode="json"),
+        )
+        return _gopro_reconfigure_response(reconfigure_status)
+
+    @app.post(
+        "/gopro/reconfigure/cancel",
+        response_model=GoProReconfigureResponse,
+        tags=["gopro"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def cancel_gopro_reconfigure() -> GoProReconfigureResponse:
+        reconfigure_status = gopro_service.cancel_reconfigure()
+        if reconfigure_status.status.value == "cancelled":
+            await publish_to_active_sessions(
+                "gopro.reconfigure.cancelled",
+                _gopro_reconfigure_response(reconfigure_status).model_dump(mode="json"),
+            )
+        return _gopro_reconfigure_response(reconfigure_status)
+
     @app.get(
         "/frame/latest",
         response_model=FrameMetadataResponse | FrameUnavailableResponse,
@@ -253,8 +312,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def latest_frame() -> FrameMetadataResponse | FrameUnavailableResponse:
         latest = frame_store.latest_if_healthy()
         if latest is None:
+            visual_status = "degraded" if gopro_service.preview_running() else "unavailable"
             return FrameUnavailableResponse(
-                visual_status="unavailable",
+                visual_status=visual_status,
                 message="No fresh frame is available.",
             )
         return _frame_response(latest)

@@ -24,10 +24,23 @@ class VisualState(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class GoProReconfigureState(StrEnum):
+    IDLE = "idle"
+    STARTED = "started"
+    CANCELLED = "cancelled"
+
+
 class GoProStatus(BaseModel):
     status: GoProState
     camera_identifier: str
     preview_running: bool
     visual_status: VisualState
     last_frame_at: datetime | None = None
+    message: str | None = None
+
+
+class GoProReconfigureStatus(BaseModel):
+    status: GoProReconfigureState
+    job_id: str | None = None
+    started_at: datetime | None = None
     message: str | None = None

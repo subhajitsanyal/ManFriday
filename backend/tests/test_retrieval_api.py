@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from manfriday.api.app import create_app
 from manfriday.cli import main as cli_main
 from manfriday.config.settings import Settings
+from manfriday.retrieval import write_retrieval_index
+from manfriday.retrieval.ingestion import LocalDocumentIngestor
 from tests.test_retrieval_url_ingestion import _fixture_server
 
 FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
@@ -49,6 +51,15 @@ def test_retrieval_ingest_returns_per_source_summary() -> None:
     assert manual["manufacturer_or_manual"] is True
     assert manual["content_hash"]
     assert manual["retrieved_at"].endswith("Z")
+
+
+def test_retrieval_ingest_writes_persisted_index(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(RETRIEVAL_INDEX_DIR=tmp_path / "index")))
+
+    response = client.post("/retrieval/ingest", headers=_headers())
+
+    assert response.status_code == 200
+    assert (tmp_path / "index" / "index.json").exists()
 
 
 def test_retrieval_ingest_includes_configured_url_sources(tmp_path: Path) -> None:
@@ -118,6 +129,60 @@ def test_retrieval_query_returns_ranked_chunks() -> None:
     assert result["score"] > 0
     assert result["bm25_score"] > 0
     assert result["keyword_score"] > 0
+
+
+def test_retrieval_query_prefers_persisted_index_when_available(tmp_path: Path) -> None:
+    index_dir = tmp_path / "index"
+    index_root = tmp_path / "indexed"
+    index_root.mkdir()
+    (index_root / "indexed.txt").write_text("indexed-only calibration token", encoding="utf-8")
+    summary = LocalDocumentIngestor().ingest_directory(index_root)
+    write_retrieval_index(summary, index_dir)
+    live_root = tmp_path / "live"
+    live_root.mkdir()
+    (live_root / "live.txt").write_text("live-only calibration token", encoding="utf-8")
+    client = TestClient(
+        create_app(
+            _settings(
+                RETRIEVAL_LOCAL_DOCS_DIR=live_root,
+                RETRIEVAL_INDEX_DIR=index_dir,
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "indexed-only", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_count"] == 1
+    assert body["results"][0]["source_uri"] == "indexed.txt"
+
+
+def test_retrieval_query_falls_back_when_persisted_index_is_missing(tmp_path: Path) -> None:
+    live_root = tmp_path / "live"
+    live_root.mkdir()
+    (live_root / "live.txt").write_text("live-only calibration token", encoding="utf-8")
+    client = TestClient(
+        create_app(
+            _settings(
+                RETRIEVAL_LOCAL_DOCS_DIR=live_root,
+                RETRIEVAL_INDEX_DIR=tmp_path / "missing-index",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/retrieval/query",
+        headers=_headers(),
+        json={"query": "live-only", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["source_uri"] == "live.txt"
 
 
 def test_retrieval_query_returns_stable_ordering_and_manual_preference() -> None:
@@ -216,6 +281,28 @@ def test_manfriday_ingest_cli_outputs_summary(capsys, monkeypatch) -> None:
     assert body["local_files_indexed"] == 2
     assert body["source_count"] == 2
     assert body["chunk_count"] == 4
+
+
+def test_manfriday_ingest_cli_writes_persisted_index(capsys, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MANFRIDAY_LOCAL_SECRET", "test-secret")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "manfriday",
+            "ingest",
+            "--local-docs-dir",
+            str(FIXTURES),
+            "--index-dir",
+            str(tmp_path / "index"),
+        ],
+    )
+
+    cli_main()
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["source_count"] == 2
+    assert (tmp_path / "index" / "index.json").exists()
 
 
 def test_manfriday_ingest_cli_includes_configured_urls(capsys, monkeypatch, tmp_path: Path) -> None:

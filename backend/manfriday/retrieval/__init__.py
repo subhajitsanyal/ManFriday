@@ -1,4 +1,9 @@
 from manfriday.retrieval.context import RetrievalContextBuilder, build_retrieval_context
+from manfriday.retrieval.index import (
+    load_retrieval_index,
+    retrieval_index_path,
+    write_retrieval_index,
+)
 from manfriday.retrieval.ingestion import (
     LocalDocumentIngestor,
     ingest_local_documents,
@@ -17,7 +22,10 @@ from manfriday.retrieval.models import (
     SourceType,
 )
 from manfriday.retrieval.search import KeywordIndex, build_keyword_index
-from manfriday.retrieval.sources import ingest_retrieval_sources
+from manfriday.retrieval.sources import (
+    ingest_retrieval_sources,
+    load_index_or_ingest_retrieval_sources,
+)
 from manfriday.retrieval.url_ingestion import (
     ConfiguredUrlIngestor,
     ConfiguredUrlSource,
@@ -46,6 +54,10 @@ __all__ = [
     "ingest_configured_urls",
     "ingest_local_documents",
     "ingest_retrieval_sources",
+    "load_index_or_ingest_retrieval_sources",
+    "load_retrieval_index",
     "merge_ingestion_summaries",
     "parse_configured_url_sources",
+    "retrieval_index_path",
+    "write_retrieval_index",
 ]

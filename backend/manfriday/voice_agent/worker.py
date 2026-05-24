@@ -49,6 +49,7 @@ class VoiceAgentWorker:
             retrieval_context_provider=RetrievalContextBuilder(
                 local_docs_dir=self.settings.retrieval_local_docs_dir,
                 online_sources_path=self.settings.retrieval_online_sources_path,
+                index_dir=self.settings.retrieval_index_dir,
             ),
         )
 
@@ -101,6 +102,7 @@ class VoiceAgentWorker:
             retrieval_context_provider=RetrievalContextBuilder(
                 local_docs_dir=self.settings.retrieval_local_docs_dir,
                 online_sources_path=self.settings.retrieval_online_sources_path,
+                index_dir=self.settings.retrieval_index_dir,
             ),
         )
 
@@ -124,5 +126,6 @@ class VoiceAgentWorker:
             retrieval_context_provider=RetrievalContextBuilder(
                 local_docs_dir=self.settings.retrieval_local_docs_dir,
                 online_sources_path=self.settings.retrieval_online_sources_path,
+                index_dir=self.settings.retrieval_index_dir,
             ),
         )

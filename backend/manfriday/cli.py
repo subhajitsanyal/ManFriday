@@ -2,7 +2,7 @@ import argparse
 import json
 
 from manfriday.config.settings import Settings
-from manfriday.retrieval import ingest_retrieval_sources
+from manfriday.retrieval import ingest_retrieval_sources, write_retrieval_index
 from manfriday.retrieval.summary import ingestion_summary_to_dict
 
 
@@ -20,6 +20,11 @@ def main() -> None:
         default=None,
         help="Override RETRIEVAL_ONLINE_SOURCES_PATH.",
     )
+    ingest_parser.add_argument(
+        "--index-dir",
+        default=None,
+        help="Override RETRIEVAL_INDEX_DIR.",
+    )
     args = parser.parse_args()
     if args.command == "ingest":
         settings = Settings()
@@ -29,10 +34,14 @@ def main() -> None:
         online_sources_path = settings.retrieval_online_sources_path
         if args.online_sources_path is not None:
             online_sources_path = online_sources_path.__class__(args.online_sources_path)
+        index_dir = settings.retrieval_index_dir
+        if args.index_dir is not None:
+            index_dir = index_dir.__class__(args.index_dir)
         summary = ingest_retrieval_sources(
             local_docs_dir=root,
             online_sources_path=online_sources_path,
         )
+        write_retrieval_index(summary, index_dir)
         print(json.dumps(ingestion_summary_to_dict(summary), indent=2))
 
 

@@ -254,6 +254,10 @@ Implemented slice:
 - Local and configured URL sources are merged for `manfriday ingest`,
   `POST /retrieval/ingest`, `POST /retrieval/query`, and voice retrieval
   context.
+- `manfriday ingest` and `POST /retrieval/ingest` persist source/chunk metadata
+  to `RETRIEVAL_INDEX_DIR/index.json`; query and voice retrieval prefer that
+  index when it is available and fall back to live rebuild when it is missing,
+  unreadable, or empty.
 - Assistant transcript events, push-to-talk API responses, and session memory
   now include citation references when retrieval context is used.
 - Android parses citation arrays from transcript events and renders compact
@@ -272,6 +276,8 @@ Implemented slice:
   URL counts, failures, CLI/API summaries, and URL-ranked query results.
 - PDF coverage validates page text extraction, page metadata, page-limit skips,
   size-limit skips, extraction failures, and PDF-ranked query results.
+- Index persistence coverage validates metadata roundtrip, stale index
+  preference, missing-index fallback, and unreadable-index fallback.
 
 Integration checkpoint:
 

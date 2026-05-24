@@ -89,6 +89,7 @@ settings storage, and Android tests are still pending.
 - [x] Android renders local Markdown/text citation references in assistant transcript rows.
 - [x] Configured URL ingestion uses YAML and reports per-source failures.
 - [x] PDF ingestion applies page and size limits.
+- [x] Source/chunk metadata index persists locally under `RETRIEVAL_INDEX_DIR`.
 - [ ] FAISS vector index persists locally.
 - [ ] Merge/rerank applies local/manual source preference.
 

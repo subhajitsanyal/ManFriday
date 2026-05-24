@@ -378,10 +378,19 @@ Implemented slice:
   normalized UI states for backend unavailable, LiveKit unavailable, GoPro
   unavailable, visual degraded/unavailable, listening, thinking, speaking,
   safety constrained, low confidence, and error paths.
+- Phase 5 scripted failure smoke is available via:
+  `cd backend && .venv/bin/python -m manfriday.phase5_failure_smoke`.
+  Expected result is JSON with `"status": "passed"` and checks for backend
+  health, session reconnect, WebSocket reconnect, LiveKit unavailable surfacing,
+  stale frame degradation, GoPro unavailable, model timeout, retrieval low
+  confidence, and debug artifact redaction.
 
 Integration checkpoint:
 
-- Run all failure scripts, verify user-visible states, inspect debug artifacts for retention and redaction.
+- Run `cd backend && .venv/bin/python -m manfriday.phase5_failure_smoke`,
+  verify `"status": "passed"`, and inspect generated debug artifacts when using
+  `--artifacts-dir`. Real LiveKit server outage and physical GoPro outage remain
+  Phase 6/manual validation items.
 
 ## Phase 6: End-To-End MVP Validation
 

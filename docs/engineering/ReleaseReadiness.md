@@ -113,7 +113,7 @@ settings storage, and Android tests are still pending.
 - [x] Redaction tests prove secrets are stripped.
 - [x] Timing metrics exist for each turn stage.
 - [x] Required Android UI states are reachable in tests/mocks.
-- [ ] Scripted failure cases pass.
+- [x] Scripted fixture failure cases pass with `manfriday.phase5_failure_smoke`.
 
 ### Phase 6
 

@@ -21,6 +21,7 @@ manfriday = "manfriday.cli:main"
 manfriday-backend = "manfriday.api.main:main"
 manfriday-agent = "manfriday.voice_agent.main:main"
 manfriday-voice-smoke = "manfriday.voice_agent.smoke:main"
+manfriday-phase5-failure-smoke = "manfriday.phase5_failure_smoke:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

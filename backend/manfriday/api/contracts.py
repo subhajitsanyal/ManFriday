@@ -38,6 +38,35 @@ class SessionStatusResponse(BaseModel):
     debug_enabled: bool
 
 
+class PushToTalkStartRequest(BaseModel):
+    session_id: str
+
+
+class PushToTalkStartResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    status: str
+    started_at: datetime
+    max_duration_seconds: int
+
+
+class PushToTalkReleaseRequest(BaseModel):
+    session_id: str
+    user_text: str | None = None
+    audio_ref: str | None = "mock://android/push-to-talk"
+    has_speech: bool = True
+
+
+class PushToTalkReleaseResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    status: str
+    user_text: str | None = None
+    assistant_text: str | None = None
+    frame_id: str | None = None
+    visual_status: str | None = None
+
+
 class GoProStatusResponse(BaseModel):
     status: str
     camera_identifier: str

@@ -58,13 +58,18 @@ settings storage, and Android tests are still pending.
 
 ### Phase 3
 
-- [ ] STT, LLM, and TTS provider interfaces are defined.
-- [ ] Mock provider orchestration tests pass.
-- [ ] OpenAI-backed provider path works through config.
-- [ ] Push-to-talk enforces button down/up and 20-second max recording duration.
-- [ ] Release-before-speech discards turn.
-- [ ] Transcript shows user text, assistant text, and frame reference.
-- [ ] No-fresh-frame turn reports visual context unavailable.
+- [x] STT, LLM, and TTS provider interfaces are defined.
+- [x] Mock provider orchestration tests pass.
+- [x] OpenAI-backed provider adapters are implemented behind config.
+- [x] AWS Bedrock Claude provider adapter is implemented behind config.
+- [ ] Live AWS Bedrock Claude provider path is validated with real credentials.
+- [x] Final STT/TTS provider path is selected for MVP as Android-native STT/TTS.
+- [x] Backend push-to-talk enforces button down/up and 20-second max recording duration.
+- [x] Backend release-before-speech discards turn.
+- [x] Android sends recognized text to backend on push-to-talk release.
+- [x] Android speaks final assistant text with native TTS.
+- [x] Android transcript shows user text, assistant text, and frame reference.
+- [x] Backend no-fresh-frame turn reports visual context unavailable.
 - [ ] Response starts within 5 seconds under normal conditions.
 
 ### Phase 4

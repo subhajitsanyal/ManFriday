@@ -122,6 +122,90 @@ def test_websocket_sends_reconnect_snapshot() -> None:
     assert event["payload"]["assistant_state"] == "idle"
 
 
+def test_push_to_talk_routes_require_bearer_auth() -> None:
+    client = TestClient(create_app(_settings()))
+
+    assert (
+        client.post("/assistant/push-to-talk/start", json={"session_id": "sess_1"}).status_code
+        == 401
+    )
+    assert (
+        client.post("/assistant/push-to-talk/release", json={"session_id": "sess_1"}).status_code
+        == 401
+    )
+
+
+def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
+    client = TestClient(create_app(_settings()))
+    headers = _headers()
+    start = client.post("/session/start", headers=headers, json={}).json()
+    client.post("/gopro/start-preview", headers=headers)
+
+    with client.websocket_connect(
+        f"/ws?session_id={start['session_id']}",
+        headers=headers,
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "session.status.changed"
+        started = client.post(
+            "/assistant/push-to-talk/start",
+            headers=headers,
+            json={"session_id": start["session_id"]},
+        )
+        listening = websocket.receive_json()
+        released = client.post(
+            "/assistant/push-to-talk/release",
+            headers=headers,
+            json={
+                "session_id": start["session_id"],
+                "user_text": "What is on the workbench?",
+            },
+        )
+        turn_events = [websocket.receive_json() for _ in range(6)]
+
+    assert started.status_code == 200
+    assert started.json()["status"] == "listening"
+    assert started.json()["max_duration_seconds"] == 20
+    assert listening["type"] == "assistant.state.changed"
+    assert listening["payload"]["assistant_state"] == "listening"
+    assert released.status_code == 200
+    assert released.json()["status"] == "completed"
+    assert released.json()["turn_id"] == started.json()["turn_id"]
+    assert released.json()["user_text"] == "What is on the workbench?"
+    assert [event["type"] for event in turn_events] == [
+        "assistant.state.changed",
+        "assistant.transcript.delta",
+        "assistant.response.started",
+        "assistant.transcript.delta",
+        "assistant.response.completed",
+        "assistant.state.changed",
+    ]
+    assert turn_events[1]["payload"]["role"] == "user"
+    assert turn_events[1]["payload"]["text"] == "What is on the workbench?"
+    assert turn_events[3]["payload"]["role"] == "assistant"
+
+
+def test_push_to_talk_release_without_speech_discards_turn() -> None:
+    client = TestClient(create_app(_settings()))
+    headers = _headers()
+    start = client.post("/session/start", headers=headers, json={}).json()
+    client.post(
+        "/assistant/push-to-talk/start",
+        headers=headers,
+        json={"session_id": start["session_id"]},
+    )
+
+    released = client.post(
+        "/assistant/push-to-talk/release",
+        headers=headers,
+        json={"session_id": start["session_id"], "has_speech": False},
+    )
+
+    assert released.status_code == 200
+    assert released.json()["status"] == "discarded"
+    assert released.json()["user_text"] is None
+    assert client.app.state.session_store.get(start["session_id"]).memory == {}
+
+
 def _settings() -> Settings:
     return Settings(
         MANFRIDAY_LOCAL_SECRET="test-secret",

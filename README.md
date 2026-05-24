@@ -3,7 +3,7 @@
 Man Friday is a hands-free visual copilot for DIY work. The system uses a GoPro
 as a workbench camera, an Android app for voice interaction, a self-hosted
 LiveKit stack for realtime conversation, and a Mac backend for GoPro control,
-frame sampling, retrieval, and OpenAI-compatible model calls.
+frame sampling, retrieval, and model calls.
 
 ## Repository Layout
 
@@ -41,6 +41,19 @@ The backend also has a GoPro controller boundary with fixture and Open GoPro
 skeleton implementations. The Android active screen can refresh and render the
 authenticated latest JPEG. The next steps are real Open GoPro connection and
 preview control, UDP preview sampling, and local hardware validation.
+
+Phase 3 voice-agent work has started with backend provider interfaces and a
+mock STT/LLM/TTS turn orchestrator. The mock path emits assistant state,
+transcript, response, and error events with selected frame references. OpenAI
+STT, Responses API model, and TTS adapters are implemented behind config with
+fake-client tests. The default LLM provider has switched to AWS Bedrock Claude
+with a native SigV4-signed adapter and Sonnet 4.5 default model ID. Authenticated
+backend push-to-talk start/release endpoints now drive the mock turn lifecycle
+and enforce the 20-second recording limit. Android Hold to Talk calls those
+endpoints, uses Android-native speech recognition to send recognized text to
+the backend, renders transcript events with frame references, and speaks final
+assistant replies with Android-native TTS. Live Bedrock validation and latency
+measurement remain next.
 
 ## Backend Local Development
 

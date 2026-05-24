@@ -167,9 +167,41 @@ Key contracts to review before implementation:
 - Assistant state events.
 - Transcript event shape and stable `turn_id`/`frame_id` references.
 
+Implemented mock-backed slice:
+
+- Backend provider interfaces for STT, vision-language model, and TTS.
+- Deterministic mock STT/LLM/TTS providers for orchestration tests.
+- OpenAI-backed STT, Responses API model, and TTS provider adapters behind
+  config, with fake-client tests for request shape and response parsing.
+- AWS Bedrock Claude Messages adapter behind config, with native SigV4 request
+  signing, Sonnet 4.5 as the default model ID, and fake-client tests for
+  Anthropic Messages payload shape and response parsing.
+- `VoiceTurnOrchestrator` with stable `turn_id`, pinned-frame-first selection,
+  no-fresh-frame degraded context, assistant state events, transcript events,
+  response started/completed events, retryable error events, and compact session
+  memory turn records.
+- Authenticated push-to-talk start/release endpoints that publish listening
+  state on button down, run the mock turn on release, enforce the 20-second max
+  duration, and discard release-before-speech turns with retryable events.
+- Android Hold to Talk press/release wiring to the backend push-to-talk
+  endpoints, assistant state display, and transcript rendering from WebSocket
+  transcript events with frame/degraded visual context.
+- Android-native speech recognition sends final user text to the backend on
+  push-to-talk release, and Android-native TTS speaks final assistant transcript
+  events.
+
+Remaining Phase 3 work:
+
+- Live AWS Bedrock Claude validation with AWS credentials, model access, and
+  selected Sonnet/Haiku model ID.
+- Latency measurement against the target response-start budget.
+- Revisit LiveKit audio capture/playback only if Android-native STT/TTS does not
+  meet latency or reliability targets.
+
 Integration checkpoint:
 
-- Mock STT/LLM/TTS turn first, then OpenAI-backed turn with selected frame attached.
+- Mock STT/LLM/TTS turn first, then Bedrock Claude-backed turn with selected
+  frame attached.
 
 ## Phase 4: Local And Configured-Source Retrieval
 

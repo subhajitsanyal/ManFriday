@@ -1,15 +1,21 @@
 package com.manfriday.android
 
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,16 +35,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -77,6 +86,8 @@ fun ManFridayApp() {
     var webSocketStatus by rememberSaveable { mutableStateOf("Disconnected") }
     var lastEvent by rememberSaveable { mutableStateOf("None") }
     var frameStatus by rememberSaveable { mutableStateOf("No frame") }
+    var assistantStatus by rememberSaveable { mutableStateOf("Idle") }
+    var transcriptEntries by remember { mutableStateOf<List<TranscriptEntry>>(emptyList()) }
     var latestFrameBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isFrameLoading by rememberSaveable { mutableStateOf(false) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
@@ -84,6 +95,23 @@ fun ManFridayApp() {
     var eventClient by remember { mutableStateOf<ManFridayWebSocketClient?>(null) }
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    var androidTtsReady by remember { mutableStateOf(false) }
+    val androidTts = remember {
+        TextToSpeech(context) { status ->
+            androidTtsReady = status == TextToSpeech.SUCCESS
+        }
+    }
+    DisposableEffect(androidTts) {
+        onDispose {
+            androidTts.stop()
+            androidTts.shutdown()
+        }
+    }
+    val speakAssistant: (String, String) -> Unit = { turnId, text ->
+        if (androidTtsReady && text.isNotBlank()) {
+            androidTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, turnId.ifBlank { "assistant" })
+        }
+    }
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -103,8 +131,42 @@ fun ManFridayApp() {
                     webSocketStatus = webSocketStatus,
                     lastEvent = lastEvent,
                     frameStatus = frameStatus,
+                    assistantStatus = assistantStatus,
+                    transcriptEntries = transcriptEntries,
                     latestFrameBitmap = latestFrameBitmap,
                     isFrameLoading = isFrameLoading,
+                    onPushToTalkStart = {
+                        runCatching {
+                            ManFridayBackendClient.pushToTalkStart(
+                                backendUrl = backendUrl,
+                                localSecret = localSecret,
+                                sessionId = activeSession.sessionId,
+                            )
+                        }.onSuccess {
+                            assistantStatus = "Listening"
+                            lastEvent = "assistant.push_to_talk.started"
+                        }.onFailure {
+                            assistantStatus = it.message ?: "Start failed"
+                            lastEvent = assistantStatus
+                        }.isSuccess
+                    },
+                    onPushToTalkRelease = { userText, hasSpeech ->
+                        runCatching {
+                            ManFridayBackendClient.pushToTalkRelease(
+                                backendUrl = backendUrl,
+                                localSecret = localSecret,
+                                sessionId = activeSession.sessionId,
+                                userText = userText,
+                                hasSpeech = hasSpeech,
+                            )
+                        }.onSuccess {
+                            assistantStatus = it.status.replaceFirstChar { char -> char.uppercase() }
+                            lastEvent = "assistant.push_to_talk.${it.status}"
+                        }.onFailure {
+                            assistantStatus = it.message ?: "Release failed"
+                            lastEvent = assistantStatus
+                        }
+                    },
                     onRefreshFrame = {
                         scope.launch {
                             isFrameLoading = true
@@ -179,7 +241,18 @@ fun ManFridayApp() {
                                     sessionId = snapshot.sessionId,
                                     mainHandler = mainHandler,
                                     onStatus = { webSocketStatus = it },
-                                    onEvent = { lastEvent = it },
+                                    onEvent = { type, payload ->
+                                        lastEvent = type
+                                        handleAssistantEvent(
+                                            type = type,
+                                            payload = payload,
+                                            onAssistantStatus = { assistantStatus = it },
+                                            onTranscript = { entry ->
+                                                transcriptEntries = transcriptEntries + entry
+                                            },
+                                            onSpeak = speakAssistant,
+                                        )
+                                    },
                                 )
                                 snapshot
                             }.onSuccess {
@@ -214,6 +287,8 @@ fun ManFridayApp() {
                             }.onSuccess {
                                 session = null
                                 latestFrameBitmap = null
+                                assistantStatus = "Idle"
+                                transcriptEntries = emptyList()
                                 setupStatus = "Session ended"
                                 liveKitStatus = "Disconnected"
                                 webSocketStatus = "Disconnected"
@@ -255,7 +330,18 @@ fun ManFridayApp() {
                                     sessionId = nextSession.sessionId,
                                     mainHandler = mainHandler,
                                     onStatus = { webSocketStatus = it },
-                                    onEvent = { lastEvent = it },
+                                    onEvent = { type, payload ->
+                                        lastEvent = type
+                                        handleAssistantEvent(
+                                            type = type,
+                                            payload = payload,
+                                            onAssistantStatus = { assistantStatus = it },
+                                            onTranscript = { entry ->
+                                                transcriptEntries = transcriptEntries + entry
+                                            },
+                                            onSpeak = speakAssistant,
+                                        )
+                                    },
                                 )
                                 nextSession
                             }.onSuccess {
@@ -356,14 +442,75 @@ private fun ActiveCopilotScreen(
     webSocketStatus: String,
     lastEvent: String,
     frameStatus: String,
+    assistantStatus: String,
+    transcriptEntries: List<TranscriptEntry>,
     latestFrameBitmap: ImageBitmap?,
     isFrameLoading: Boolean,
+    onPushToTalkStart: suspend () -> Boolean,
+    onPushToTalkRelease: suspend (String?, Boolean) -> Unit,
     onRefreshFrame: () -> Unit,
     onLook: () -> Unit,
     onReconnect: () -> Unit,
     onEndSession: () -> Unit,
 ) {
-    var isListening by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val releaseCallback by rememberUpdatedState(onPushToTalkRelease)
+    var releaseSent by remember { mutableStateOf(false) }
+    val speechRecognizer = remember {
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        } else {
+            null
+        }
+    }
+    val speechIntent = remember {
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+            )
+            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+    }
+    DisposableEffect(speechRecognizer) {
+        if (speechRecognizer != null) {
+            speechRecognizer.setRecognitionListener(
+                object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) = Unit
+                    override fun onBeginningOfSpeech() = Unit
+                    override fun onRmsChanged(rmsdB: Float) = Unit
+                    override fun onBufferReceived(buffer: ByteArray?) = Unit
+                    override fun onEndOfSpeech() = Unit
+                    override fun onPartialResults(partialResults: Bundle?) = Unit
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+                    override fun onResults(results: Bundle?) {
+                        if (releaseSent) return
+                        releaseSent = true
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.trim()
+                            .orEmpty()
+                        scope.launch {
+                            releaseCallback(text.takeIf { it.isNotBlank() }, text.isNotBlank())
+                        }
+                    }
+
+                    override fun onError(error: Int) {
+                        if (releaseSent) return
+                        releaseSent = true
+                        scope.launch {
+                            releaseCallback(null, false)
+                        }
+                    }
+                },
+            )
+        }
+        onDispose {
+            speechRecognizer?.destroy()
+        }
+    }
 
     Scaffold { padding ->
         Column(
@@ -392,6 +539,7 @@ private fun ActiveCopilotScreen(
             StatusLine(label = "LiveKit", value = "$liveKitStatus: ${session.livekitRoom}")
             StatusLine(label = "Events", value = webSocketStatus)
             StatusLine(label = "Last event", value = lastEvent)
+            StatusLine(label = "Assistant", value = assistantStatus)
             StatusLine(label = "GoPro", value = "Pending")
             StatusLine(label = "Visual", value = frameStatus)
 
@@ -410,10 +558,29 @@ private fun ActiveCopilotScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { isListening = !isListening },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(session.sessionId) {
+                        detectTapGestures(
+                            onPress = {
+                                val started = onPushToTalkStart()
+                                if (started) {
+                                    releaseSent = false
+                                    if (speechRecognizer == null) {
+                                        releaseSent = true
+                                        onPushToTalkRelease(null, false)
+                                    } else {
+                                        speechRecognizer.startListening(speechIntent)
+                                        tryAwaitRelease()
+                                        speechRecognizer.stopListening()
+                                    }
+                                }
+                            },
+                        )
+                    },
+                onClick = {},
             ) {
-                Text(if (isListening) "Release to ask" else "Hold to talk")
+                Text(if (assistantStatus == "Listening") "Release to ask" else "Hold to talk")
             }
 
             Button(
@@ -440,7 +607,30 @@ private fun ActiveCopilotScreen(
             }
 
             Text("Transcript", style = MaterialTheme.typography.titleMedium)
-            Text("No turns yet.", style = MaterialTheme.typography.bodyMedium)
+            if (transcriptEntries.isEmpty()) {
+                Text("No turns yet.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                transcriptEntries.forEach { entry ->
+                    TranscriptLine(entry)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TranscriptLine(entry: TranscriptEntry) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(entry.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge)
+        Text(entry.text, style = MaterialTheme.typography.bodyMedium)
+        val frame = entry.frameId
+        if (!frame.isNullOrBlank()) {
+            Text("Frame $frame", style = MaterialTheme.typography.bodySmall)
+        } else if (entry.visualContext == "unavailable" || entry.visualStatus == "degraded") {
+            Text("Visual context unavailable", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -491,6 +681,26 @@ private data class SessionSnapshot(
     val status: String,
     val expiresAt: String,
     val debugEnabled: Boolean,
+)
+
+private data class PushToTalkStartResponse(
+    val turnId: String,
+    val status: String,
+)
+
+private data class PushToTalkReleaseResponse(
+    val turnId: String,
+    val status: String,
+    val assistantText: String?,
+)
+
+private data class TranscriptEntry(
+    val turnId: String,
+    val role: String,
+    val text: String,
+    val frameId: String?,
+    val visualContext: String?,
+    val visualStatus: String?,
 )
 
 private data class FrameMetadata(
@@ -571,6 +781,49 @@ private object ManFridayBackendClient {
             status = json.getString("status"),
             expiresAt = json.getString("expires_at"),
             debugEnabled = json.getBoolean("debug_enabled"),
+        )
+    }
+
+    suspend fun pushToTalkStart(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+    ): PushToTalkStartResponse = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/assistant/push-to-talk/start",
+            localSecret = localSecret,
+            body = JSONObject().put("session_id", sessionId).toString(),
+        )
+        val json = JSONObject(response)
+        PushToTalkStartResponse(
+            turnId = json.getString("turn_id"),
+            status = json.getString("status"),
+        )
+    }
+
+    suspend fun pushToTalkRelease(
+        backendUrl: String,
+        localSecret: String,
+        sessionId: String,
+        userText: String?,
+        hasSpeech: Boolean,
+    ): PushToTalkReleaseResponse = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/assistant/push-to-talk/release",
+            localSecret = localSecret,
+            body = JSONObject()
+                .put("session_id", sessionId)
+                .put("user_text", userText)
+                .put("has_speech", hasSpeech)
+                .toString(),
+        )
+        val json = JSONObject(response)
+        PushToTalkReleaseResponse(
+            turnId = json.getString("turn_id"),
+            status = json.getString("status"),
+            assistantText = json.optNullableString("assistant_text"),
         )
     }
 
@@ -745,7 +998,7 @@ private fun startEventClient(
     sessionId: String,
     mainHandler: Handler,
     onStatus: (String) -> Unit,
-    onEvent: (String) -> Unit,
+    onEvent: (String, JSONObject?) -> Unit,
 ): ManFridayWebSocketClient {
     val client = ManFridayWebSocketClient(
         backendUrl = backendUrl,
@@ -756,27 +1009,78 @@ private fun startEventClient(
                 mainHandler.post {
                     val json = runCatching { JSONObject(message) }.getOrNull()
                     val type = json?.optString("type")?.takeIf { it.isNotBlank() } ?: "event"
-                    val status = json?.optJSONObject("payload")?.optString("status")
+                    val payload = json?.optJSONObject("payload")
+                    val status = payload?.optString("status")
                     onStatus(if (status.isNullOrBlank()) "Connected" else "Connected: $status")
-                    onEvent(type)
+                    onEvent(type, payload)
                 }
             }
 
             override fun onError(error: Throwable) {
                 mainHandler.post {
                     onStatus("Error")
-                    onEvent(error.message ?: "WebSocket error")
+                    onEvent(error.message ?: "WebSocket error", null)
                 }
             }
 
             override fun onClosed(code: Int?, reason: String?) {
                 mainHandler.post {
                     onStatus("Disconnected")
-                    onEvent(reason ?: code?.toString() ?: "closed")
+                    onEvent(reason ?: code?.toString() ?: "closed", null)
                 }
             }
         },
     )
     client.connect()
     return client
+}
+
+private fun handleAssistantEvent(
+    type: String,
+    payload: JSONObject?,
+    onAssistantStatus: (String) -> Unit,
+    onTranscript: (TranscriptEntry) -> Unit,
+    onSpeak: (String, String) -> Unit,
+) {
+    when (type) {
+        "assistant.state.changed" -> {
+            val state = payload?.optString("assistant_state").orEmpty()
+            if (state.isNotBlank()) {
+                onAssistantStatus(state.replaceFirstChar { it.uppercase() })
+            }
+        }
+        "assistant.response.started" -> onAssistantStatus("Thinking")
+        "assistant.response.completed" -> onAssistantStatus("Idle")
+        "assistant.error" -> {
+            val message = payload?.optString("message").orEmpty()
+            onAssistantStatus(message.ifBlank { "Assistant error" })
+        }
+        "assistant.transcript.delta" -> {
+            val text = payload?.optString("text").orEmpty()
+            if (payload != null && text.isNotBlank()) {
+                val role = payload.optString("role", "assistant")
+                val turnId = payload.optString("turn_id")
+                onTranscript(
+                    TranscriptEntry(
+                        turnId = turnId,
+                        role = role,
+                        text = text,
+                        frameId = payload.optNullableString("frame_id"),
+                        visualContext = payload.optNullableString("visual_context"),
+                        visualStatus = payload.optNullableString("visual_status"),
+                    ),
+                )
+                if (role == "assistant" && payload.optBoolean("is_final", false)) {
+                    onSpeak(turnId, text)
+                }
+            }
+        }
+    }
+}
+
+private fun JSONObject.optNullableString(key: String): String? {
+    if (!has(key) || isNull(key)) {
+        return null
+    }
+    return optString(key).takeIf { it.isNotBlank() }
 }

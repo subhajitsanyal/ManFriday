@@ -14,6 +14,10 @@ from manfriday.api.contracts import (
     GoProStatusResponse,
     LiveKitResponse,
     LookResponse,
+    PushToTalkReleaseRequest,
+    PushToTalkReleaseResponse,
+    PushToTalkStartRequest,
+    PushToTalkStartResponse,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartRequest,
@@ -28,6 +32,8 @@ from manfriday.frames.models import FrameMetadata
 from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
 from manfriday.sessions import Session, SessionStatus, SessionStore
+from manfriday.voice_agent import VoiceAgentWorker
+from manfriday.voice_agent.push_to_talk import PushToTalkCoordinator, PushToTalkError
 
 
 def _status_snapshot(session: Session) -> EventEnvelope:
@@ -100,6 +106,19 @@ def _not_found(session_id: str) -> HTTPException:
     )
 
 
+def _push_to_talk_error(exc: PushToTalkError) -> HTTPException:
+    return HTTPException(
+        status_code=int(exc.http_status),
+        detail={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "retryable": exc.retryable,
+            },
+        },
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     app = FastAPI(
@@ -125,6 +144,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         frame_store=frame_store,
         controller=gopro_controller,
     )
+    voice_worker = VoiceAgentWorker(settings=app_settings)
+    voice_orchestrator = voice_worker.build_mock_turn_orchestrator(
+        frame_store=frame_store,
+        event_bus=event_bus,
+    )
+    push_to_talk = PushToTalkCoordinator(
+        orchestrator=voice_orchestrator,
+        event_bus=event_bus,
+        max_duration_seconds=app_settings.push_to_talk_max_duration_seconds,
+    )
 
     app.state.settings = app_settings
     app.state.session_store = store
@@ -133,6 +162,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.frame_store = frame_store
     app.state.gopro_controller = gopro_controller
     app.state.gopro_service = gopro_service
+    app.state.voice_orchestrator = voice_orchestrator
+    app.state.push_to_talk = push_to_talk
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_, exc: HTTPException) -> JSONResponse:
@@ -226,6 +257,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if session.status == SessionStatus.ACTIVE:
             session = store.touch(session_id)
         return _status_response(session)
+
+    @app.post(
+        "/assistant/push-to-talk/start",
+        response_model=PushToTalkStartResponse,
+        tags=["assistant"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def push_to_talk_start(
+        request: PushToTalkStartRequest,
+    ) -> PushToTalkStartResponse:
+        await publish_expired_sessions()
+        session = store.get(request.session_id)
+        if session is None:
+            raise _not_found(request.session_id)
+        session = store.touch(session.session_id)
+        try:
+            started = await push_to_talk.start(session)
+        except PushToTalkError as exc:
+            raise _push_to_talk_error(exc) from exc
+        return PushToTalkStartResponse(
+            session_id=started.session_id,
+            turn_id=started.turn_id,
+            status=started.status,
+            started_at=started.started_at,
+            max_duration_seconds=started.max_duration_seconds,
+        )
+
+    @app.post(
+        "/assistant/push-to-talk/release",
+        response_model=PushToTalkReleaseResponse,
+        tags=["assistant"],
+        dependencies=[Depends(auth_dependency)],
+    )
+    async def push_to_talk_release(
+        request: PushToTalkReleaseRequest,
+    ) -> PushToTalkReleaseResponse:
+        await publish_expired_sessions()
+        session = store.get(request.session_id)
+        if session is None:
+            raise _not_found(request.session_id)
+        session = store.touch(session.session_id)
+        try:
+            released = await push_to_talk.release(
+                session=session,
+                audio_ref=request.audio_ref,
+                user_text=request.user_text,
+                has_speech=request.has_speech,
+            )
+        except PushToTalkError as exc:
+            raise _push_to_talk_error(exc) from exc
+        result = released.result
+        return PushToTalkReleaseResponse(
+            session_id=released.session_id,
+            turn_id=released.turn_id,
+            status=released.status,
+            user_text=result.user_text if result else None,
+            assistant_text=result.assistant_text if result else None,
+            frame_id=result.frame_id if result else None,
+            visual_status=result.visual_status if result else None,
+        )
 
     @app.get(
         "/gopro/status",

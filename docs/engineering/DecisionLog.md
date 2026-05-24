@@ -44,9 +44,9 @@ Decision records use this format:
 
 | ID | Decision needed | Options under consideration | Owner | Needed by | Status |
 | --- | --- | --- | --- | --- | --- |
-| OD-001 | Final OpenAI STT model ID | Current OpenAI transcription model options | Voice And Model Agent | Phase 3 | Open |
-| OD-002 | Final vision-capable LLM model ID | Current OpenAI vision-capable model options | Voice And Model Agent | Phase 3 | Open |
-| OD-003 | Final OpenAI TTS model and voice | Current OpenAI speech model/voice options | Voice And Model Agent | Phase 3 | Open |
+| OD-001 | Final STT path | Android-native SpeechRecognizer for MVP; backend STT adapters retained as fallback | Voice And Model Agent | Phase 3 | Selected for MVP |
+| OD-002 | Final vision-capable LLM model ID | AWS Bedrock Claude Sonnet/Haiku model access validation | Voice And Model Agent | Phase 3 | Open |
+| OD-003 | Final TTS path | Android-native TextToSpeech for MVP; backend TTS adapters retained as fallback | Voice And Model Agent | Phase 3 | Selected for MVP |
 | OD-004 | Android networking stack | Retrofit + OkHttp WebSocket; Ktor HTTP + WebSocket | Android Client Agent | Phase 1 | Open |
 | OD-005 | Exact LiveKit push-to-talk implementation | LiveKit client controls; app events gating agent processing; VAD with explicit state gate | Voice And Model Agent with Android Client Agent | Phase 3 prototype | Open |
 | OD-006 | Source/chunk metadata persistence | SQLite; JSON files | Retrieval, Safety, And Debug Agent | Phase 4 | Open |

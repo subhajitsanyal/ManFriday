@@ -24,10 +24,21 @@ class Settings(BaseSettings):
     livekit_api_secret: SecretStr = Field(default=SecretStr("secret"), alias="LIVEKIT_API_SECRET")
     livekit_token_ttl_seconds: int = Field(default=3600, alias="LIVEKIT_TOKEN_TTL_SECONDS")
 
-    model_provider: str = Field(default="openai", alias="MODEL_PROVIDER")
+    model_provider: Literal["mock", "openai", "bedrock"] = Field(
+        default="bedrock",
+        alias="MODEL_PROVIDER",
+    )
     model_base_url: str | None = Field(default=None, alias="MODEL_BASE_URL")
     model_api_key: SecretStr | None = Field(default=None, alias="MODEL_API_KEY")
-    model_name: str = Field(default="gpt-4.1-mini", alias="MODEL_NAME")
+    model_name: str = Field(
+        default="anthropic.claude-sonnet-4-5-20250929-v1:0",
+        alias="MODEL_NAME",
+    )
+    bedrock_max_tokens: int = Field(default=1024, alias="BEDROCK_MAX_TOKENS")
+    aws_region: str = Field(default="us-east-1", alias="AWS_REGION")
+    aws_access_key_id: SecretStr | None = Field(default=None, alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: SecretStr | None = Field(default=None, alias="AWS_SECRET_ACCESS_KEY")
+    aws_session_token: SecretStr | None = Field(default=None, alias="AWS_SESSION_TOKEN")
 
     stt_provider: str = Field(default="openai", alias="STT_PROVIDER")
     stt_model: str = Field(default="gpt-4o-mini-transcribe", alias="STT_MODEL")
@@ -65,6 +76,10 @@ class Settings(BaseSettings):
 
     session_idle_timeout_seconds: int = Field(default=7200, alias="SESSION_IDLE_TIMEOUT_SECONDS")
     websocket_queue_limit: int = Field(default=32, alias="WEBSOCKET_QUEUE_LIMIT")
+    push_to_talk_max_duration_seconds: int = Field(
+        default=20,
+        alias="PUSH_TO_TALK_MAX_DURATION_SECONDS",
+    )
     debug_enabled: bool = Field(default=False, alias="DEBUG_ENABLED")
     debug_artifacts_dir: Path = Field(default=Path("debug_artifacts"), alias="DEBUG_ARTIFACTS_DIR")
     debug_max_sessions: int = Field(default=10, alias="DEBUG_MAX_SESSIONS")

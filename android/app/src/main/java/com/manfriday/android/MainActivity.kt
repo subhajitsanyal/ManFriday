@@ -202,6 +202,60 @@ fun ManFridayApp() {
                             isFrameLoading = false
                         }
                     },
+                    onStartPreview = {
+                        scope.launch {
+                            isFrameLoading = true
+                            frameStatus = "Starting preview"
+                            runCatching {
+                                val status = ManFridayBackendClient.startGoProPreview(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                )
+                                val frame = runCatching {
+                                    ManFridayBackendClient.latestFrame(
+                                        backendUrl = backendUrl,
+                                        localSecret = localSecret,
+                                        sessionId = activeSession.sessionId,
+                                    )
+                                }.getOrNull()
+                                val bitmap = frame?.jpegUrl?.let { jpegUrl ->
+                                    ManFridayBackendClient.frameJpeg(
+                                        backendUrl = backendUrl,
+                                        localSecret = localSecret,
+                                        jpegUrl = jpegUrl,
+                                    )
+                                }
+                                Triple(status, frame, bitmap)
+                            }.onSuccess {
+                                frameStatus = it.second?.toStatusText() ?: it.first.toStatusText()
+                                latestFrameBitmap = it.third
+                                lastEvent = "gopro.start_preview.${it.first.status}"
+                            }.onFailure {
+                                frameStatus = it.message ?: "Start preview failed"
+                                latestFrameBitmap = null
+                            }
+                            isFrameLoading = false
+                        }
+                    },
+                    onStopPreview = {
+                        scope.launch {
+                            isFrameLoading = true
+                            frameStatus = "Stopping preview"
+                            runCatching {
+                                ManFridayBackendClient.stopGoProPreview(
+                                    backendUrl = backendUrl,
+                                    localSecret = localSecret,
+                                )
+                            }.onSuccess {
+                                frameStatus = it.toStatusText()
+                                latestFrameBitmap = null
+                                lastEvent = "gopro.stop_preview.${it.status}"
+                            }.onFailure {
+                                frameStatus = it.message ?: "Stop preview failed"
+                            }
+                            isFrameLoading = false
+                        }
+                    },
                     onLook = {
                         scope.launch {
                             isFrameLoading = true
@@ -472,6 +526,8 @@ private fun ActiveCopilotScreen(
     onPushToTalkStart: suspend () -> Boolean,
     onPushToTalkRelease: suspend (String?, Boolean) -> Unit,
     onRefreshFrame: () -> Unit,
+    onStartPreview: () -> Unit,
+    onStopPreview: () -> Unit,
     onLook: () -> Unit,
     onReconnect: () -> Unit,
     onEndSession: () -> Unit,
@@ -655,6 +711,26 @@ private fun ActiveCopilotScreen(
                 onClick = onLook,
             ) {
                 Text(if (isFrameLoading) "Looking" else "Look")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isFrameLoading,
+                    onClick = onStartPreview,
+                ) {
+                    Text("Start preview")
+                }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isFrameLoading,
+                    onClick = onStopPreview,
+                ) {
+                    Text("Stop preview")
+                }
             }
 
             Button(
@@ -861,6 +937,27 @@ private data class FrameMetadata(
     }
 }
 
+private data class GoProPreviewStatus(
+    val status: String,
+    val cameraIdentifier: String,
+    val previewRunning: Boolean,
+    val visualStatus: String,
+    val lastFrameAt: Instant?,
+    val message: String?,
+) {
+    fun toStatusText(now: Instant = Instant.now()): String {
+        val parts = mutableListOf<String>()
+        status.takeIf { it.isNotBlank() }?.let { parts += it }
+        visualStatus.takeIf { it.isNotBlank() }?.let { parts += it }
+        if (previewRunning) {
+            parts += "preview running"
+        }
+        lastFrameAt?.let { parts += "${Duration.between(it, now).toHumanAge()} old" }
+        message?.takeIf { it.isNotBlank() }?.let { parts += it }
+        return parts.joinToString(" | ").ifBlank { "GoPro status received" }
+    }
+}
+
 private object ManFridayBackendClient {
     suspend fun startSession(
         backendUrl: String,
@@ -980,6 +1077,32 @@ private object ManFridayBackendClient {
         parseFrameMetadata(response)
     }
 
+    suspend fun startGoProPreview(
+        backendUrl: String,
+        localSecret: String,
+    ): GoProPreviewStatus = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/gopro/start-preview",
+            localSecret = localSecret,
+            body = "{}",
+        )
+        parseGoProPreviewStatus(response)
+    }
+
+    suspend fun stopGoProPreview(
+        backendUrl: String,
+        localSecret: String,
+    ): GoProPreviewStatus = withContext(Dispatchers.IO) {
+        val response = request(
+            method = "POST",
+            url = "${backendUrl.trimEnd('/')}/gopro/stop-preview",
+            localSecret = localSecret,
+            body = "{}",
+        )
+        parseGoProPreviewStatus(response)
+    }
+
     suspend fun lookFrame(
         backendUrl: String,
         localSecret: String,
@@ -1035,7 +1158,7 @@ private object ManFridayBackendClient {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 5_000
-            readTimeout = 5_000
+            readTimeout = 15_000
             doOutput = body.isNotEmpty()
             setRequestProperty("Authorization", "Bearer $localSecret")
             setRequestProperty("Content-Type", "application/json")
@@ -1068,6 +1191,18 @@ private object ManFridayBackendClient {
             source = frame.firstString("source", "camera", "device"),
             mimeType = frame.firstString("mime_type", "content_type", "format"),
             jpegUrl = frame.firstString("jpeg_url", "jpg_url", "image_url", "url"),
+        )
+    }
+
+    private fun parseGoProPreviewStatus(response: String): GoProPreviewStatus {
+        val json = JSONObject(response)
+        return GoProPreviewStatus(
+            status = json.optString("status", ""),
+            cameraIdentifier = json.optString("camera_identifier", ""),
+            previewRunning = json.optBoolean("preview_running", false),
+            visualStatus = json.optString("visual_status", ""),
+            lastFrameAt = json.firstInstant("last_frame_at"),
+            message = json.optNullableString("message"),
         )
     }
 

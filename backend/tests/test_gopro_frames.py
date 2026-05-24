@@ -250,6 +250,25 @@ def test_open_gopro_controller_reports_missing_credentials(tmp_path) -> None:
     assert start.json()["preview_running"] is False
 
 
+def test_open_gopro_external_udp_stream_can_start_without_credentials(tmp_path) -> None:
+    settings = _settings(
+        GOPRO_CONTROLLER="open_gopro",
+        GOPRO_COHN_CREDENTIALS_PATH=tmp_path / "missing-cohn.json",
+        GOPRO_ALLOW_EXTERNAL_UDP_STREAM=True,
+        FRAME_UDP_URL="udp://@:8554",
+    )
+    app = create_app(settings)
+
+    status = app.state.gopro_controller.status()
+    start = app.state.gopro_controller.start_preview()
+
+    assert status.status.value == "connected"
+    assert status.message == "External GoPro UDP stream is configured."
+    assert start.status.value == "preview_running"
+    assert start.message == "Using externally managed GoPro UDP stream."
+    assert app.state.gopro_service.sampler().__class__.__name__ == "FfmpegFrameSampler"
+
+
 def test_open_gopro_controller_detects_saved_credentials(tmp_path) -> None:
     credentials_path = tmp_path / "cohn.json"
     credentials_path.write_text('{"camera":"fixture"}')

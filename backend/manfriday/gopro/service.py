@@ -1,8 +1,15 @@
 from datetime import UTC, datetime
+from time import sleep
 from uuid import uuid4
 
 from manfriday.config.settings import Settings
-from manfriday.frames import FixtureFrameSampler, FrameSamplerState, FrameStore
+from manfriday.frames import (
+    FfmpegFrameSampler,
+    FixtureFrameSampler,
+    FrameSampler,
+    FrameSamplerState,
+    FrameStore,
+)
 from manfriday.gopro.controller import FixtureGoProController, GoProController
 from manfriday.gopro.models import (
     GoProReconfigureState,
@@ -24,7 +31,7 @@ class GoProService:
         self._settings = settings
         self._frame_store = frame_store
         self._controller = controller or FixtureGoProController(settings=settings)
-        self._sampler = FixtureFrameSampler(frame_store=frame_store)
+        self._sampler = self._build_sampler()
         self._preview_running = False
         self._reconfigure_status = GoProReconfigureStatus(status=GoProReconfigureState.IDLE)
 
@@ -86,6 +93,7 @@ class GoProService:
         self._preview_running = controller_status.status == GoProState.PREVIEW_RUNNING
         if self._preview_running:
             self._sampler.start(datetime.now(UTC))
+            self._wait_for_first_frame()
             return self.get_status()
         latest = self._frame_store.latest()
         return GoProStatus(
@@ -128,5 +136,27 @@ class GoProService:
             )
         return self._reconfigure_status
 
-    def sampler(self) -> FixtureFrameSampler:
+    def sampler(self) -> FrameSampler:
         return self._sampler
+
+    def _build_sampler(self) -> FrameSampler:
+        if (
+            self._settings.gopro_controller == "open_gopro"
+            and self._settings.gopro_allow_external_udp_stream
+        ):
+            return FfmpegFrameSampler(
+                frame_store=self._frame_store,
+                stream_url=self._settings.frame_udp_url,
+                ffmpeg_path=self._settings.ffmpeg_path,
+                fps=self._settings.frame_sample_fps,
+                jpeg_quality=self._settings.frame_jpeg_quality,
+            )
+        return FixtureFrameSampler(frame_store=self._frame_store)
+
+    def _wait_for_first_frame(self) -> None:
+        if self._frame_store.latest_if_healthy() is not None:
+            return
+        for _ in range(50):
+            sleep(0.1)
+            if self._frame_store.latest_if_healthy() is not None:
+                return

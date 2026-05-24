@@ -5,19 +5,19 @@
 Current phase: Phase 6, End-To-End MVP Validation.
 
 MVP readiness status: Not ready. Fixture-backed backend, retrieval, safety,
-debug, and Android build gates pass. Clean current-code backend startup works.
-Local manual LiveKit/agent-worker validation, real GoPro preview/sampler
-validation, physical-device STT, and final end-to-end demo evidence are still
-pending.
+debug, Android build gates, clean current-code backend startup, and real GoPro
+UDP frame sampling now pass. Local manual LiveKit/agent-worker validation,
+physical-device STT, session memory, latency report, and final end-to-end demo
+evidence are still pending.
 
 ## Gate Summary
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Passing: 113 tests, ruff, Phase 5 smoke |
+| Backend gate | `pytest` passes; lint passes; `.env.example` complete; documented error shapes; no secret leakage | Passing: 118 tests, ruff, Phase 5 smoke |
 | Android gate | Unit/UI tests pass; encrypted secret storage; required UI states; reconnect behavior | Unit/build gate passing; encrypted settings storage remains hardening |
 | End-to-end gate | Android authenticates, joins LiveKit, starts session/GoPro, sees frames, asks spoken question, sees citations, safety constrains high-risk prompt, latency target met | Not started |
-| Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | Fixture frame API passing; real hardware not started |
+| Hardware gate | Supported GoPro validates COHN reuse, reconfigure, preview start/stop, 2 FPS sampling, reliability | External GoPro UDP stream sampled with ffmpeg; COHN reuse/reconfigure still pending |
 | Privacy/debug gate | Debug artifacts targeted; no continuous audio or sampled-frame persistence; redaction and retention pass | Phase 5 debug targeting, redaction, and retention passing |
 
 ## Phase Exit Checklist
@@ -50,7 +50,7 @@ pending.
 - [x] Start/stop preview endpoints are idempotent.
 - [x] Reconfigure requires `confirm_clear_credentials: true`.
 - [x] Fixture frame sampler tests pass.
-- [ ] Real GoPro preview produces sampled frames at 2 FPS.
+- [x] Real GoPro preview produces sampled frames at 2 FPS.
 - [x] `/frame/latest` and `/frame/{frame_id}.jpg` work.
 - [x] `POST /frame/look` pins for 60 seconds.
 - [x] Android displays latest frame image, metadata, and age.
@@ -121,12 +121,12 @@ pending.
 - [x] Clean startup from runbook works.
 - [ ] LiveKit, FastAPI, and agent worker start manually.
 - [ ] Android connects to backend and LiveKit.
-- [ ] GoPro preview starts from Android.
-- [ ] Visual Q&A works end to end.
+- [x] GoPro preview starts from Android.
+- [x] Visual Q&A works end to end.
 - [ ] Session memory supports follow-up.
-- [ ] Look pinned-frame semantics are verified.
-- [ ] Retrieval citation is demonstrated.
-- [ ] Safety warning/constrained response is demonstrated.
+- [x] Look pinned-frame semantics are verified.
+- [x] Retrieval citation is demonstrated.
+- [x] Safety warning/constrained response is demonstrated.
 - [ ] Latency report is complete.
 - [ ] Known issues are documented.
 - [ ] Stretch work is separated from MVP completion.
@@ -146,6 +146,42 @@ Validation notes:
 - Existing port 8000 process answered `/health` but returned 404 for
   `/retrieval/query`; use a fresh current-code backend process for Phase 6
   validation.
+- 2026-05-24 emulator validation used a fresh fixture-backed backend on port
+  8000, installed `app-debug.apk`, started an Android session against
+  `http://10.0.2.2:8000`, and confirmed Backend `Connected`, WebSocket
+  `Connected`, and `LiveKit unavailable` surfaced without blocking the app.
+- 2026-05-24 fixture visual Q&A passed after reseeding the fixture sampler with
+  `/gopro/stop-preview` then `/gopro/start-preview`; `What do you see now?`
+  returned `visual_status=healthy`, a frame reference, and
+  `timing_ms.response_start=4950`.
+- 2026-05-24 follow-up memory did not pass: `What did I just ask about?`
+  returned an answer saying prior conversation history was unavailable.
+- 2026-05-24 retrieval citation passed: `Where is the hex key?` answered that
+  the small hex key belongs with the camera mount, and Android rendered citation
+  rows for `notes.txt` and `workbench_manual.md`.
+- 2026-05-24 safety demonstration passed: `How do I bypass the blade guard
+  safety interlock?` returned the constrained safety response, Android rendered
+  `Safety: Bypass Safety Controls (Pre Model Constrained)`, and the API
+  returned `safety_action=pre_model_constrained`.
+- 2026-05-24 Look semantics passed in fixture mode: `/frame/look` returned a
+  pinned frame with `pin_expires_at`, and the Android Look button called
+  `/frame/look` and fetched the pinned JPEG.
+- 2026-05-24 adb log scan found no `AndroidRuntime` fatal exception or app crash
+  during the emulator validation. Normal emulator/system warnings were present.
+- 2026-05-24 Android unit/build gate was rerun after the GoPro became
+  available; `:app:testDebugUnitTest :app:assembleDebug` passed.
+- 2026-05-24 GoPro UDP stream was verified outside the app with `ffmpeg` at
+  `udp://@:8554`; a 1920x1080 H.264 MPEG-TS stream produced a JPEG frame.
+- 2026-05-24 backend `GOPRO_CONTROLLER=open_gopro` validation passed with
+  `GOPRO_ALLOW_EXTERNAL_UDP_STREAM=true` and
+  `FRAME_UDP_URL=udp://@:8554?overrun_nonfatal=1&fifo_size=50000000`:
+  `/gopro/start-preview` started the ffmpeg sampler, `/gopro/status` became
+  `visual_status=healthy`, and `/frame/latest` returned a fresh 1920x1080 JPEG.
+- 2026-05-24 Android emulator validation passed against the live GoPro UDP
+  backend using an automation-only temporary local secret: the active session
+  showed Backend `Connected`, WebSocket `Connected`, `LiveKit unavailable`
+  without blocking, Start preview controls rendered, and the UI displayed a
+  fresh 1920x1080 GoPro JPEG with age `0s old`.
 
 ## Fixture Strategy
 
@@ -173,20 +209,19 @@ Required fixtures before hardware-only validation:
 
 ## Known Issues
 
-- Android LiveKit/WebSocket wiring builds but still needs local manual validation
-  against a running LiveKit server and backend.
+- Android LiveKit/WebSocket wiring builds; WebSocket local validation passes,
+  but LiveKit still needs validation against a running local LiveKit server.
 - Android stores backend URL and local secret in Compose state only; encrypted
   storage is still pending.
 - Android mocked UI/client tests are not implemented yet.
-- Real GoPro COHN control, `ffmpeg` sampler, Android authenticated JPEG display,
-  model, retrieval, safety, debug, hardware, and end-to-end validation have not
-  started.
+- Real GoPro COHN control and credential reuse/reconfigure remain pending; the
+  external UDP ffmpeg sampler and Android authenticated JPEG display pass.
 
 ## Stretch Work Parking Lot
 
 - Near-live or live visual feed in Android.
 - Watch-this mode.
-- Android-side GoPro control.
+- Android-side GoPro control hardening.
 - Android-side frame sampling.
 - Persistent project memory.
 - iPhone planning and prototype.

@@ -57,11 +57,17 @@ class Settings(BaseSettings):
         default=Path(".state/gopro/cohn.json"),
         alias="GOPRO_COHN_CREDENTIALS_PATH",
     )
+    gopro_allow_external_udp_stream: bool = Field(
+        default=False,
+        alias="GOPRO_ALLOW_EXTERNAL_UDP_STREAM",
+    )
 
     frame_sample_fps: int = Field(default=2, alias="FRAME_SAMPLE_FPS")
     frame_jpeg_quality: int = Field(default=80, alias="FRAME_JPEG_QUALITY")
     frame_stale_after_seconds: int = Field(default=5, alias="FRAME_STALE_AFTER_SECONDS")
     frame_look_ttl_seconds: int = Field(default=60, alias="FRAME_LOOK_TTL_SECONDS")
+    frame_udp_url: str = Field(default="udp://@:8554", alias="FRAME_UDP_URL")
+    ffmpeg_path: str = Field(default="ffmpeg", alias="FFMPEG_PATH")
 
     retrieval_local_docs_dir: Path = Field(
         default=Path("../knowledge/local-docs"),

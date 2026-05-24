@@ -32,6 +32,10 @@ class FrameStore:
         self._frames[frame.frame_id] = frame
         return frame
 
+    def put(self, frame: FrameMetadata) -> None:
+        self._latest = frame
+        self._frames[frame.frame_id] = frame
+
     def latest(self) -> FrameMetadata | None:
         return self._latest
 

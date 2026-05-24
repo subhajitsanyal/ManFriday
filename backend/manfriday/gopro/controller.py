@@ -53,10 +53,17 @@ class FixtureGoProController:
 
 class OpenGoProController:
     def __init__(self, *, settings: Settings) -> None:
+        self._settings = settings
         self._camera_identifier = settings.gopro_serial_suffix
         self._credentials_path = settings.gopro_cohn_credentials_path
 
     def status(self) -> GoProControllerStatus:
+        if self._settings_allows_external_udp():
+            return GoProControllerStatus(
+                status=GoProState.CONNECTED,
+                camera_identifier=self._camera_identifier,
+                message="External GoPro UDP stream is configured.",
+            )
         if not self._credentials_path.exists():
             return GoProControllerStatus(
                 status=GoProState.CREDENTIALS_MISSING,
@@ -70,6 +77,12 @@ class OpenGoProController:
         )
 
     def start_preview(self) -> GoProControllerStatus:
+        if self._settings_allows_external_udp():
+            return GoProControllerStatus(
+                status=GoProState.PREVIEW_RUNNING,
+                camera_identifier=self._camera_identifier,
+                message="Using externally managed GoPro UDP stream.",
+            )
         if not self._credentials_path.exists():
             return GoProControllerStatus(
                 status=GoProState.RECONFIGURE_REQUIRED,
@@ -87,6 +100,9 @@ class OpenGoProController:
 
     def clear_saved_credentials(self) -> None:
         _clear_file(self._credentials_path)
+
+    def _settings_allows_external_udp(self) -> bool:
+        return bool(self._settings.gopro_allow_external_udp_stream and self._settings.frame_udp_url)
 
 
 def build_gopro_controller(settings: Settings) -> GoProController:

@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,6 +45,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -321,7 +323,13 @@ fun ManFridayApp() {
                                     localSecret = localSecret,
                                 )
                                 liveKitStatus = "Connecting"
-                                audioClient.connect(nextSession)
+                                runCatching {
+                                    audioClient.connect(nextSession)
+                                }.onSuccess {
+                                    liveKitStatus = "Connected"
+                                }.onFailure {
+                                    liveKitStatus = "Unavailable: ${it.message ?: "LiveKit failed"}"
+                                }
                                 webSocketStatus = "Connecting"
                                 eventClient?.close()
                                 eventClient = startEventClient(
@@ -347,7 +355,6 @@ fun ManFridayApp() {
                             }.onSuccess {
                                 session = it
                                 setupStatus = "Session active"
-                                liveKitStatus = "Connected"
                                 isFrameLoading = true
                                 frameStatus = "Loading latest frame"
                                 runCatching {
@@ -422,6 +429,17 @@ private fun SetupScreen(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    enabled = localSecret.isNotEmpty(),
+                    onClick = { onLocalSecretChange("") },
+                ) {
+                    Text("Clear secret")
+                }
+            }
             StatusLine(label = "Backend", value = status)
             Button(
                 modifier = Modifier.fillMaxWidth(),
@@ -457,6 +475,8 @@ private fun ActiveCopilotScreen(
     val scope = rememberCoroutineScope()
     val releaseCallback by rememberUpdatedState(onPushToTalkRelease)
     var releaseSent by remember { mutableStateOf(false) }
+    var backendTurnStarted by remember { mutableStateOf(false) }
+    var typedQuestion by rememberSaveable { mutableStateOf("") }
     val speechRecognizer = remember {
         if (SpeechRecognizer.isRecognitionAvailable(context)) {
             SpeechRecognizer.createSpeechRecognizer(context)
@@ -487,6 +507,7 @@ private fun ActiveCopilotScreen(
                     override fun onResults(results: Bundle?) {
                         if (releaseSent) return
                         releaseSent = true
+                        if (!backendTurnStarted) return
                         val text = results
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
@@ -500,6 +521,7 @@ private fun ActiveCopilotScreen(
                     override fun onError(error: Int) {
                         if (releaseSent) return
                         releaseSent = true
+                        if (!backendTurnStarted) return
                         scope.launch {
                             releaseCallback(null, false)
                         }
@@ -557,30 +579,69 @@ private fun ActiveCopilotScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Button(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
                     .pointerInput(session.sessionId) {
                         detectTapGestures(
                             onPress = {
+                                releaseSent = false
+                                backendTurnStarted = false
+                                if (speechRecognizer != null) {
+                                    speechRecognizer.startListening(speechIntent)
+                                }
                                 val started = onPushToTalkStart()
+                                backendTurnStarted = started
                                 if (started) {
-                                    releaseSent = false
                                     if (speechRecognizer == null) {
                                         releaseSent = true
                                         onPushToTalkRelease(null, false)
                                     } else {
-                                        speechRecognizer.startListening(speechIntent)
                                         tryAwaitRelease()
                                         speechRecognizer.stopListening()
                                     }
+                                } else {
+                                    speechRecognizer?.cancel()
                                 }
                             },
                         )
                     },
-                onClick = {},
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = MaterialTheme.shapes.small,
             ) {
-                Text(if (assistantStatus == "Listening") "Release to ask" else "Hold to talk")
+                Box(contentAlignment = Alignment.Center) {
+                    Text(if (assistantStatus == "Listening") "Release to ask" else "Hold to talk")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = typedQuestion,
+                    onValueChange = { typedQuestion = it },
+                    label = { Text("Ask by text") },
+                    singleLine = true,
+                )
+                Button(
+                    enabled = typedQuestion.isNotBlank(),
+                    onClick = {
+                        val question = typedQuestion.trim()
+                        scope.launch {
+                            val started = onPushToTalkStart()
+                            if (started) {
+                                onPushToTalkRelease(question, true)
+                                typedQuestion = ""
+                            }
+                        }
+                    },
+                ) {
+                    Text("Ask")
+                }
             }
 
             Button(

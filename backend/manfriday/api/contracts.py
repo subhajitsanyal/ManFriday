@@ -65,6 +65,7 @@ class PushToTalkReleaseResponse(BaseModel):
     assistant_text: str | None = None
     frame_id: str | None = None
     visual_status: str | None = None
+    timing_ms: dict[str, int] | None = None
 
 
 class GoProStatusResponse(BaseModel):

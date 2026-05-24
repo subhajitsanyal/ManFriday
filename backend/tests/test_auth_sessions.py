@@ -171,6 +171,7 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert released.json()["status"] == "completed"
     assert released.json()["turn_id"] == started.json()["turn_id"]
     assert released.json()["user_text"] == "What is on the workbench?"
+    assert released.json()["timing_ms"]["response_start"] >= 0
     assert [event["type"] for event in turn_events] == [
         "assistant.state.changed",
         "assistant.transcript.delta",
@@ -181,6 +182,7 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     ]
     assert turn_events[1]["payload"]["role"] == "user"
     assert turn_events[1]["payload"]["text"] == "What is on the workbench?"
+    assert turn_events[2]["payload"]["timing_ms"]["response_start"] >= 0
     assert turn_events[3]["payload"]["role"] == "assistant"
 
 

@@ -316,6 +316,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             assistant_text=result.assistant_text if result else None,
             frame_id=result.frame_id if result else None,
             visual_status=result.visual_status if result else None,
+            timing_ms=result.timing_ms if result else None,
         )
 
     @app.get(

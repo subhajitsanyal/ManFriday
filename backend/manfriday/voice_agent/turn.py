@@ -24,6 +24,7 @@ class VoiceTurnResult:
     frame_id: str | None
     visual_status: str
     audio: SynthesizedAudio
+    timing_ms: dict[str, int]
 
 
 class VoiceTurnError(RuntimeError):
@@ -116,17 +117,6 @@ class VoiceTurnOrchestrator:
                 "visual_status": visual_status,
             },
         )
-        await self._publish(
-            "assistant.response.started",
-            session_id=session_id,
-            payload={
-                "turn_id": turn_id,
-                "frame_id": frame_id,
-                "visual_context": visual_context,
-                "visual_status": visual_status,
-            },
-        )
-
         try:
             model_start = perf_counter()
             response = self._model_provider.complete_turn(
@@ -139,6 +129,7 @@ class VoiceTurnOrchestrator:
                 ),
             )
             timings["model"] = self._elapsed_ms(model_start)
+            timings["response_start"] = self._elapsed_ms(started_at)
         except Exception as exc:
             await self._publish_error(
                 session_id=session_id,
@@ -148,6 +139,20 @@ class VoiceTurnOrchestrator:
                 retryable=True,
             )
             raise VoiceTurnError("Model turn failed.") from exc
+
+        await self._publish(
+            "assistant.response.started",
+            session_id=session_id,
+            payload={
+                "turn_id": turn_id,
+                "frame_id": frame_id,
+                "visual_context": visual_context,
+                "visual_status": visual_status,
+                "timing_ms": {
+                    "response_start": timings["response_start"],
+                },
+            },
+        )
 
         if synthesize_audio:
             try:
@@ -218,6 +223,7 @@ class VoiceTurnOrchestrator:
             frame_id=frame_id,
             visual_status=visual_status,
             audio=speech,
+            timing_ms=timings,
         )
 
     def _select_frame(self) -> FrameMetadata | None:

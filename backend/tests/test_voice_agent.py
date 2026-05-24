@@ -27,6 +27,7 @@ from manfriday.voice_agent import (
     build_bedrock_client,
     build_openai_client,
 )
+from manfriday.voice_agent.smoke import _run as run_voice_smoke
 
 
 def test_voice_agent_worker_describes_livekit_connection() -> None:
@@ -61,8 +62,15 @@ def test_mock_turn_emits_transcript_response_events_and_updates_memory() -> None
     assert events[1].payload["text"] == "What am I looking at?"
     assert events[2].payload["frame_id"] == result.frame_id
     assert events[2].payload["visual_context"] == "frame"
+    assert events[2].payload["timing_ms"]["response_start"] >= 0
     assert events[3].payload["role"] == "assistant"
     assert events[4].payload["tts_audio_ref"] == f"mock://tts/{result.turn_id}"
+    assert events[4].payload["timing_ms"]["response_start"] >= 0
+    assert (
+        events[4].payload["timing_ms"]["total"]
+        >= events[4].payload["timing_ms"]["response_start"]
+    )
+    assert result.timing_ms["response_start"] >= 0
     assert memory["turns"] == [
         {
             "turn_id": result.turn_id,
@@ -433,6 +441,21 @@ def test_push_to_talk_release_with_android_text_skips_backend_stt_and_tts() -> N
     assert completed.payload["tts_audio_ref"] is None
     assert completed.payload["timing_ms"]["stt"] == 0
     assert completed.payload["timing_ms"]["tts"] == 0
+    assert completed.payload["timing_ms"]["response_start"] >= 0
+    assert result.result.timing_ms["response_start"] >= 0
+
+
+def test_voice_smoke_runs_configured_mock_turn(monkeypatch) -> None:
+    monkeypatch.setenv("MANFRIDAY_LOCAL_SECRET", "test-secret")
+    monkeypatch.setenv("MODEL_PROVIDER", "mock")
+
+    result = asyncio.run(run_voice_smoke("What is this?", seed_frame=True))
+
+    assert result["provider"] == "mock"
+    assert result["user_text"] == "What is this?"
+    assert result["assistant_text"].startswith("I used frame")
+    assert result["visual_status"] == "healthy"
+    assert result["timing_ms"]["response_start"] >= 0
 
 
 def test_push_to_talk_release_without_speech_discards_turn() -> None:

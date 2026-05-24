@@ -19,6 +19,7 @@ dev = [
 [project.scripts]
 manfriday-backend = "manfriday.api.main:main"
 manfriday-agent = "manfriday.voice_agent.main:main"
+manfriday-voice-smoke = "manfriday.voice_agent.smoke:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

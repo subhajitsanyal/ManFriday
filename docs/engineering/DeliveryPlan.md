@@ -179,8 +179,8 @@ Implemented mock-backed slice:
   Anthropic Messages payload shape and response parsing.
 - `VoiceTurnOrchestrator` with stable `turn_id`, pinned-frame-first selection,
   no-fresh-frame degraded context, assistant state events, transcript events,
-  response started/completed events, retryable error events, and compact session
-  memory turn records.
+  response started/completed events with `response_start` and `total` timing,
+  retryable error events, and compact session memory turn records.
 - Authenticated push-to-talk start/release endpoints that publish listening
   state on button down, run the mock turn on release, enforce the 20-second max
   duration, and discard release-before-speech turns with retryable events.
@@ -190,10 +190,16 @@ Implemented mock-backed slice:
 - Android-native speech recognition sends final user text to the backend on
   push-to-talk release, and Android-native TTS speaks final assistant transcript
   events.
+- Configured-provider smoke helper is available via `manfriday-voice-smoke`.
+- Configured Bedrock smoke validated `response_start=2217ms`, under the
+  5-second Phase 3 target.
+- Android emulator typed Ask path validates backend, Bedrock, transcript, and
+  TTS interaction. Emulator SpeechRecognizer returns `NO_SPEECH_DETECTED`; final
+  spoken STT validation is deferred to a physical Android device.
 
 Remaining Phase 3 work:
 
-- Latency measurement against the target response-start budget.
+- Physical Android spoken push-to-talk validation.
 - Revisit LiveKit audio capture/playback only if Android-native STT/TTS does not
   meet latency or reliability targets.
 

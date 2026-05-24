@@ -70,7 +70,10 @@ settings storage, and Android tests are still pending.
 - [x] Android speaks final assistant text with native TTS.
 - [x] Android transcript shows user text, assistant text, and frame reference.
 - [x] Backend no-fresh-frame turn reports visual context unavailable.
-- [ ] Response starts within 5 seconds under normal conditions.
+- [x] Backend emits `response_start` and `total` timing for voice turns.
+- [x] Android emulator typed Ask validates backend, Bedrock, transcript, and TTS.
+- [ ] Android physical-device STT validates spoken push-to-talk.
+- [x] Response starts within 5 seconds in configured Bedrock smoke: 2217 ms.
 
 ### Phase 4
 

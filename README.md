@@ -53,8 +53,11 @@ and enforce the 20-second recording limit. Android Hold to Talk calls those
 endpoints, uses Android-native speech recognition to send recognized text to
 the backend, renders transcript events with frame references, and speaks final
 assistant replies with Android-native TTS. A live Bedrock smoke call has passed
-with the default shared AWS credentials profile; latency measurement remains
-next.
+with the default shared AWS credentials profile, Android typed end-to-end
+validation passes in the emulator, and emulator STT is a known limitation until
+physical-device validation is available. Backend turn events and responses
+include `response_start` and `total` timing; the latest configured Bedrock smoke
+started response in 2217 ms.
 
 ## Backend Local Development
 
@@ -87,6 +90,13 @@ Run the backend worker skeleton:
 ```bash
 cd backend
 manfriday-agent
+```
+
+Run a configured voice-turn smoke:
+
+```bash
+cd backend
+python -m manfriday.voice_agent.smoke "Reply with exactly: manfriday smoke ok"
 ```
 
 ## Android Local Development

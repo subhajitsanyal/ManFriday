@@ -117,7 +117,8 @@ settings storage, and Android tests are still pending.
 
 ### Phase 6
 
-- [ ] Clean startup from docs works.
+- [x] Phase 6 local validation runbook exists.
+- [ ] Clean startup from runbook works.
 - [ ] LiveKit, FastAPI, and agent worker start manually.
 - [ ] Android connects to backend and LiveKit.
 - [ ] GoPro preview starts from Android.

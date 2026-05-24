@@ -401,6 +401,15 @@ Exit criteria:
 - PRD MVP success criteria are satisfied.
 - Known limitations are documented.
 - Next stretch work is clearly separated from MVP completion.
+- `docs/engineering/Phase6Runbook.md` is followed for local fixture and manual
+  hardware validation.
+
+Implemented slice:
+
+- Phase 6 runbook added with a single fixture validation checklist covering
+  backend tests, lint, Phase 5 failure smoke, Android unit/build, retrieval
+  smoke, voice smoke, Android manual flow, GoPro validation, safety validation,
+  and debug artifact review.
 
 Demo script:
 

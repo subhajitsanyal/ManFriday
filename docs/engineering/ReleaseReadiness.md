@@ -5,10 +5,9 @@
 Current phase: Phase 6, End-To-End MVP Validation.
 
 MVP readiness status: Not ready. Fixture-backed backend, retrieval, safety,
-debug, Android build gates, clean current-code backend startup, and real GoPro
-UDP frame sampling now pass. Local manual LiveKit/agent-worker validation,
-physical-device STT, latency report, and final end-to-end demo evidence are
-still pending.
+debug, Android build gates, clean current-code backend startup, local LiveKit
+join validation, and real GoPro UDP frame sampling now pass. Physical-device
+STT, latency report, and final end-to-end demo evidence are still pending.
 
 ## Gate Summary
 
@@ -119,8 +118,8 @@ still pending.
 
 - [x] Phase 6 local validation runbook exists.
 - [x] Clean startup from runbook works.
-- [ ] LiveKit, FastAPI, and agent worker start manually.
-- [ ] Android connects to backend and LiveKit.
+- [x] LiveKit, FastAPI, and agent worker start manually.
+- [x] Android connects to backend and LiveKit.
 - [x] GoPro preview starts from Android.
 - [x] Visual Q&A works end to end.
 - [x] Session memory supports follow-up.
@@ -213,8 +212,10 @@ Required fixtures before hardware-only validation:
 
 ## Known Issues
 
-- Android LiveKit/WebSocket wiring builds; WebSocket local validation passes,
-  but LiveKit still needs validation against a running local LiveKit server.
+- Android LiveKit/WebSocket wiring builds; local validation passes against
+  `livekit-server --dev`, FastAPI, and the Android emulator. The emulator
+  joined the returned room, opened LiveKit data/audio transport, and showed
+  backend, LiveKit, and WebSocket connected states.
 - Android stores backend URL and local secret in Compose state only; encrypted
   storage is still pending.
 - Android mocked UI/client tests are not implemented yet.

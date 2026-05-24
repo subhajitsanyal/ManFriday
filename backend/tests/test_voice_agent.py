@@ -80,11 +80,13 @@ def test_mock_turn_emits_transcript_response_events_and_updates_memory() -> None
     assert events[4].payload["safety_category"] == "none"
     assert events[4].payload["tts_audio_ref"] == f"mock://tts/{result.turn_id}"
     assert events[4].payload["timing_ms"]["response_start"] >= 0
+    _assert_turn_timing_keys(events[4].payload["timing_ms"])
     assert (
         events[4].payload["timing_ms"]["total"]
         >= events[4].payload["timing_ms"]["response_start"]
     )
     assert result.timing_ms["response_start"] >= 0
+    _assert_turn_timing_keys(result.timing_ms)
     assert memory["turns"] == [
         {
             "turn_id": result.turn_id,
@@ -176,6 +178,8 @@ def test_turn_retrieval_no_results_does_not_block_answer() -> None:
     assert model_provider.requests[0].retrieval_context.chunks == ()
     completed = next(event for event in events if event.type == "assistant.response.completed")
     assert completed.payload["citations"] == []
+    assert completed.payload["timing_ms"]["retrieval"] >= 0
+    assert model_provider.requests[0].retrieval_context.safety_policy.confidence == "low_confidence"
 
 
 def test_low_confidence_retrieval_replaces_hallucinated_tool_instructions() -> None:
@@ -253,6 +257,9 @@ def test_high_risk_prompt_is_constrained_before_model_call() -> None:
     assert assistant_transcript.payload["safety_category"] == "bypass_safety_controls"
     completed = next(event for event in events if event.type == "assistant.response.completed")
     assert completed.payload["safety_action"] == "pre_model_constrained"
+    assert completed.payload["timing_ms"]["model"] == 0
+    assert completed.payload["timing_ms"]["safety_pre"] >= 0
+    assert completed.payload["timing_ms"]["safety_post"] == 0
     assert memory["turns"][0]["safety_category"] == "bypass_safety_controls"
 
 
@@ -310,6 +317,21 @@ def test_provider_failure_emits_error_and_does_not_call_later_providers() -> Non
     assert events[-1].type == "assistant.error"
     assert events[-1].payload["code"] == "model_failed"
     assert tts_provider.call_count == 0
+
+
+def test_model_timeout_emits_retryable_model_failure() -> None:
+    frame_store = _frame_store()
+
+    events = asyncio.run(
+        _run_turn_expect_error(
+            frame_store=frame_store,
+            model_provider=TimeoutModelProvider(),
+        ),
+    )
+
+    assert events[-1].type == "assistant.error"
+    assert events[-1].payload["code"] == "model_failed"
+    assert events[-1].payload["retryable"] is True
 
 
 def test_openai_stt_provider_posts_audio_transcription_request() -> None:
@@ -639,6 +661,7 @@ def test_push_to_talk_release_with_android_text_skips_backend_stt_and_tts() -> N
     assert completed.payload["timing_ms"]["stt"] == 0
     assert completed.payload["timing_ms"]["tts"] == 0
     assert completed.payload["timing_ms"]["response_start"] >= 0
+    _assert_turn_timing_keys(completed.payload["timing_ms"])
     assert result.result.timing_ms["response_start"] >= 0
 
 
@@ -653,6 +676,7 @@ def test_voice_smoke_runs_configured_mock_turn(monkeypatch) -> None:
     assert result["assistant_text"].startswith("I used frame")
     assert result["visual_status"] == "healthy"
     assert result["timing_ms"]["response_start"] >= 0
+    _assert_turn_timing_keys(result["timing_ms"])
 
 
 def test_push_to_talk_release_without_speech_discards_turn() -> None:
@@ -806,6 +830,32 @@ def _drain_events(queue):
     return events
 
 
+def _assert_turn_timing_keys(timing_ms: dict[str, int]) -> None:
+    assert set(timing_ms) >= {
+        "stt",
+        "frame_select",
+        "retrieval",
+        "safety_pre",
+        "model",
+        "safety_post",
+        "response_start",
+        "tts",
+        "total",
+    }
+    for key in (
+        "stt",
+        "frame_select",
+        "retrieval",
+        "safety_pre",
+        "model",
+        "safety_post",
+        "response_start",
+        "tts",
+        "total",
+    ):
+        assert timing_ms[key] >= 0
+
+
 def _frame_store() -> FrameStore:
     return FrameStore(look_ttl_seconds=60, stale_after_seconds=5)
 
@@ -826,6 +876,11 @@ def _session(session_id: str):
 class FailingModelProvider:
     def complete_turn(self, request):
         raise RuntimeError("mock model failed")
+
+
+class TimeoutModelProvider:
+    def complete_turn(self, request):
+        raise TimeoutError("mock model timeout")
 
 
 class CapturingModelProvider:

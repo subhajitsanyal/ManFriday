@@ -111,7 +111,7 @@ settings storage, and Android tests are still pending.
 - [x] Debug artifact endpoints require auth.
 - [x] Debug artifacts save only targeted session data.
 - [x] Redaction tests prove secrets are stripped.
-- [ ] Timing metrics exist for each turn stage.
+- [x] Timing metrics exist for each turn stage.
 - [ ] Required Android UI states are reachable.
 - [ ] Scripted failure cases pass.
 

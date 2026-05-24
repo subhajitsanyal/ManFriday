@@ -367,6 +367,12 @@ Implemented slice:
   artifacts are written.
 - Redaction coverage proves secrets are removed from settings-derived values,
   headers, prompt/query text, and retrieval source metadata.
+- Completed turn timing now reports `stt`, `frame_select`, `retrieval`,
+  `safety_pre`, `model`, `safety_post`, `response_start`, `tts`, and `total`.
+- Scripted reliability coverage now exercises backend session reconnect after a
+  WebSocket disconnect, stale-frame degraded visual responses, GoPro unavailable
+  and sampler-failure states, model timeout/failure handling, and retrieval
+  low-confidence behavior.
 
 Integration checkpoint:
 

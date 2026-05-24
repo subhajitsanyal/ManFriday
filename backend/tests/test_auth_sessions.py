@@ -126,6 +126,33 @@ def test_websocket_sends_reconnect_snapshot() -> None:
     assert event["payload"]["assistant_state"] == "idle"
 
 
+def test_websocket_disconnect_leaves_session_reconnectable() -> None:
+    client = TestClient(create_app(_settings()))
+    headers = _headers()
+    start = client.post("/session/start", headers=headers, json={}).json()
+
+    with client.websocket_connect(
+        f"/ws?session_id={start['session_id']}",
+        headers=headers,
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "session.status.changed"
+
+    status = client.get(
+        "/session/status",
+        headers=headers,
+        params={"session_id": start["session_id"]},
+    )
+    with client.websocket_connect(
+        f"/ws?session_id={start['session_id']}",
+        headers=headers,
+    ) as websocket:
+        reconnect = websocket.receive_json()
+
+    assert status.status_code == 200
+    assert status.json()["status"] == "active"
+    assert reconnect["payload"]["status"] == "active"
+
+
 def test_push_to_talk_routes_require_bearer_auth() -> None:
     client = TestClient(create_app(_settings()))
 
@@ -178,6 +205,7 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert released.json()["safety_action"] == "none"
     assert released.json()["safety_category"] == "none"
     assert released.json()["timing_ms"]["response_start"] >= 0
+    _assert_turn_timing_keys(released.json()["timing_ms"])
     assert [event["type"] for event in turn_events] == [
         "assistant.state.changed",
         "assistant.transcript.delta",
@@ -192,6 +220,10 @@ def test_push_to_talk_start_and_release_emit_transcript_events() -> None:
     assert turn_events[3]["payload"]["role"] == "assistant"
     assert turn_events[3]["payload"]["safety_action"] == "none"
     assert turn_events[3]["payload"]["safety_category"] == "none"
+    completed = next(
+        event for event in turn_events if event["type"] == "assistant.response.completed"
+    )
+    _assert_turn_timing_keys(completed["payload"]["timing_ms"])
 
 
 def test_push_to_talk_release_response_and_transcript_include_retrieval_citations() -> None:
@@ -423,3 +455,29 @@ def _settings(**overrides) -> Settings:
 
 def _headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-secret"}
+
+
+def _assert_turn_timing_keys(timing_ms: dict[str, int]) -> None:
+    assert set(timing_ms) >= {
+        "stt",
+        "frame_select",
+        "retrieval",
+        "safety_pre",
+        "model",
+        "safety_post",
+        "response_start",
+        "tts",
+        "total",
+    }
+    for key in (
+        "stt",
+        "frame_select",
+        "retrieval",
+        "safety_pre",
+        "model",
+        "safety_post",
+        "response_start",
+        "tts",
+        "total",
+    ):
+        assert timing_ms[key] >= 0

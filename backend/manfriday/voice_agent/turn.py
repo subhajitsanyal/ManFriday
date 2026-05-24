@@ -136,11 +136,15 @@ class VoiceTurnOrchestrator:
         frame_id = frame.frame_id if frame else None
         visual_context = "frame" if frame else "unavailable"
         visual_status = "healthy" if frame else "degraded"
+        retrieval_start = perf_counter()
         retrieval_context = self._build_retrieval_context(transcript.text)
+        timings["retrieval"] = self._elapsed_ms(retrieval_start)
         citations = retrieval_context.citations if retrieval_context is not None else ()
         citation_payload = [_citation_payload(citation) for citation in citations]
         retrieval_debug = _retrieval_debug_payload(retrieval_context)
+        safety_pre_start = perf_counter()
         safety = _classify_user_prompt(transcript.text)
+        timings["safety_pre"] = self._elapsed_ms(safety_pre_start)
 
         await self._publish(
             "assistant.transcript.delta",
@@ -158,6 +162,7 @@ class VoiceTurnOrchestrator:
         if safety.blocks_model:
             response = ModelTurnResponse(text=safety.response_text or "")
             timings["model"] = 0
+            timings["safety_post"] = 0
             timings["response_start"] = self._elapsed_ms(started_at)
         else:
             try:
@@ -172,11 +177,13 @@ class VoiceTurnOrchestrator:
                         retrieval_context=retrieval_context,
                     ),
                 )
+                safety_post_start = perf_counter()
                 response_text, safety = _apply_post_model_safety(
                     response.text,
                     retrieval_context,
                     safety,
                 )
+                timings["safety_post"] = self._elapsed_ms(safety_post_start)
                 response = ModelTurnResponse(text=response_text)
                 timings["model"] = self._elapsed_ms(model_start)
                 timings["response_start"] = self._elapsed_ms(started_at)

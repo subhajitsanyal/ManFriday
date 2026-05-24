@@ -160,6 +160,8 @@ def test_retrieval_query_prefers_persisted_index_when_available(tmp_path: Path) 
     body = response.json()
     assert body["source_count"] == 1
     assert body["results"][0]["source_uri"] == "indexed.txt"
+    assert body["results"][0]["vector_score"] > 0
+    assert body["results"][0]["combined_score"] == body["results"][0]["score"]
 
 
 def test_retrieval_query_falls_back_when_persisted_index_is_missing(tmp_path: Path) -> None:
@@ -183,6 +185,7 @@ def test_retrieval_query_falls_back_when_persisted_index_is_missing(tmp_path: Pa
 
     assert response.status_code == 200
     assert response.json()["results"][0]["source_uri"] == "live.txt"
+    assert response.json()["results"][0]["vector_score"] == 0.0
 
 
 def test_retrieval_query_returns_stable_ordering_and_manual_preference() -> None:

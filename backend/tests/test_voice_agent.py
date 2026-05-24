@@ -8,7 +8,11 @@ from manfriday.api.app import create_app
 from manfriday.config.settings import Settings
 from manfriday.events import EventBus
 from manfriday.frames import FrameStore
-from manfriday.retrieval import RetrievalContextBuilder
+from manfriday.retrieval import (
+    RetrievalContextBuilder,
+    ingest_retrieval_sources,
+    write_retrieval_index,
+)
 from manfriday.voice_agent import (
     AudioInput,
     BedrockClaudeModel,
@@ -115,20 +119,28 @@ def test_mock_turn_completes_without_fresh_frame() -> None:
     assert "do not have a fresh frame" in result.assistant_text
 
 
-def test_turn_includes_retrieval_context_in_model_request_and_emits_citations() -> None:
+def test_turn_includes_retrieval_context_in_model_request_and_emits_citations(
+    tmp_path: Path,
+) -> None:
     model_provider = CapturingModelProvider()
+    summary = ingest_retrieval_sources(local_docs_dir=RETRIEVAL_FIXTURES, online_sources_path=None)
+    write_retrieval_index(summary, tmp_path)
 
     result, events, memory = asyncio.run(
         _run_turn(
             frame_store=_frame_store(),
             model_provider=model_provider,
-            retrieval_context_provider=RetrievalContextBuilder(local_docs_dir=RETRIEVAL_FIXTURES),
+            retrieval_context_provider=RetrievalContextBuilder(
+                local_docs_dir=RETRIEVAL_FIXTURES,
+                index_dir=tmp_path,
+            ),
             user_text="Where is the hex key?",
         ),
     )
 
     assert model_provider.requests[0].retrieval_context is not None
     assert model_provider.requests[0].retrieval_context.chunks[0].source.uri == "notes.txt"
+    assert model_provider.requests[0].retrieval_context.chunks[0].vector_score > 0
     assert result.citations[0].source_uri == "notes.txt"
     assistant_transcript = next(
         event

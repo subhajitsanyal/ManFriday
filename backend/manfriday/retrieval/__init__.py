@@ -1,8 +1,11 @@
 from manfriday.retrieval.context import RetrievalContextBuilder, build_retrieval_context
 from manfriday.retrieval.index import (
     load_retrieval_index,
+    load_vector_index,
     retrieval_index_path,
+    vector_index_path,
     write_retrieval_index,
+    write_vector_index,
 )
 from manfriday.retrieval.ingestion import (
     LocalDocumentIngestor,
@@ -21,7 +24,14 @@ from manfriday.retrieval.models import (
     SourceMetadata,
     SourceType,
 )
-from manfriday.retrieval.search import KeywordIndex, build_keyword_index
+from manfriday.retrieval.search import (
+    KeywordIndex,
+    MergedRetriever,
+    VectorIndex,
+    build_keyword_index,
+    build_merged_retriever,
+    build_vector_index,
+)
 from manfriday.retrieval.sources import (
     ingest_retrieval_sources,
     load_index_or_ingest_retrieval_sources,
@@ -40,6 +50,7 @@ __all__ = [
     "IngestionSkipped",
     "IngestionSummary",
     "KeywordIndex",
+    "MergedRetriever",
     "LocalDocumentIngestor",
     "ConfiguredUrlIngestor",
     "ConfiguredUrlSource",
@@ -49,15 +60,21 @@ __all__ = [
     "SourceIngestionResult",
     "SourceMetadata",
     "SourceType",
+    "VectorIndex",
     "build_keyword_index",
+    "build_merged_retriever",
     "build_retrieval_context",
+    "build_vector_index",
     "ingest_configured_urls",
     "ingest_local_documents",
     "ingest_retrieval_sources",
     "load_index_or_ingest_retrieval_sources",
     "load_retrieval_index",
+    "load_vector_index",
     "merge_ingestion_summaries",
     "parse_configured_url_sources",
     "retrieval_index_path",
+    "vector_index_path",
     "write_retrieval_index",
+    "write_vector_index",
 ]

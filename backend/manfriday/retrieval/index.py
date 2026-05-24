@@ -9,15 +9,19 @@ from manfriday.retrieval.models import (
     SourceIngestionResult,
     SourceMetadata,
 )
+from manfriday.retrieval.search import VectorEntry, VectorIndex, build_vector_index
 
 INDEX_FILENAME = "index.json"
+VECTOR_INDEX_FILENAME = "vector_index.json"
 INDEX_VERSION = 1
+VECTOR_INDEX_VERSION = 1
 
 
 def write_retrieval_index(summary: IngestionSummary, index_dir: Path) -> Path:
     index_dir.mkdir(parents=True, exist_ok=True)
     path = retrieval_index_path(index_dir)
     path.write_text(json.dumps(_summary_to_index(summary), indent=2), encoding="utf-8")
+    write_vector_index(build_vector_index(chunks=summary.chunks), index_dir)
     return path
 
 
@@ -53,6 +57,58 @@ def load_retrieval_index(index_dir: Path) -> IngestionSummary | None:
 
 def retrieval_index_path(index_dir: Path) -> Path:
     return index_dir / INDEX_FILENAME
+
+
+def vector_index_path(index_dir: Path) -> Path:
+    return index_dir / VECTOR_INDEX_FILENAME
+
+
+def write_vector_index(index: VectorIndex, index_dir: Path) -> Path:
+    index_dir.mkdir(parents=True, exist_ok=True)
+    path = vector_index_path(index_dir)
+    payload = {
+        "version": VECTOR_INDEX_VERSION,
+        "written_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "entries": [
+            {
+                "chunk_id": entry.chunk_id,
+                "source_id": entry.source_id,
+                "content_hash": entry.content_hash,
+                "weights": entry.weights,
+                "norm": entry.norm,
+            }
+            for entry in sorted(
+                index.entries_by_chunk_id.values(),
+                key=lambda entry: (entry.source_id, entry.chunk_id),
+            )
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def load_vector_index(index_dir: Path, chunks: tuple[ChunkMetadata, ...]) -> VectorIndex | None:
+    path = vector_index_path(index_dir)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("version") != VECTOR_INDEX_VERSION:
+            return None
+        entries = tuple(_vector_entry_from_dict(item) for item in payload.get("entries", []))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    expected = {
+        chunk.chunk_id: (chunk.source_id, chunk.content_hash)
+        for chunk in chunks
+    }
+    actual = {
+        entry.chunk_id: (entry.source_id, entry.content_hash)
+        for entry in entries
+    }
+    if expected != actual:
+        return None
+    return VectorIndex(entries_by_chunk_id={entry.chunk_id: entry for entry in entries})
 
 
 def _summary_to_index(summary: IngestionSummary) -> dict:
@@ -105,6 +161,16 @@ def _chunk_from_dict(value: dict) -> ChunkMetadata:
         bm25_score=value.get("bm25_score"),
         vector_score=value.get("vector_score"),
         combined_score=value.get("combined_score"),
+    )
+
+
+def _vector_entry_from_dict(value: dict) -> VectorEntry:
+    return VectorEntry(
+        chunk_id=value["chunk_id"],
+        source_id=value["source_id"],
+        content_hash=value.get("content_hash"),
+        weights={str(term): float(weight) for term, weight in value.get("weights", {}).items()},
+        norm=float(value.get("norm", 0.0)),
     )
 
 

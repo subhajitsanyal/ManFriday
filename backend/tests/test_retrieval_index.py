@@ -1,9 +1,12 @@
+from dataclasses import replace
 from pathlib import Path
 
 from manfriday.retrieval import (
     ingest_retrieval_sources,
     load_index_or_ingest_retrieval_sources,
     load_retrieval_index,
+    load_vector_index,
+    vector_index_path,
     write_retrieval_index,
 )
 
@@ -26,6 +29,10 @@ def test_retrieval_index_round_trips_source_and_chunk_metadata(tmp_path: Path) -
         chunk.chunk_id for chunk in summary.chunks
     ]
     assert loaded.source_results[0].source.source_id == loaded.sources[0].source_id
+    vector_index = load_vector_index(tmp_path, loaded.chunks)
+    assert vector_index is not None
+    assert vector_index.entries_by_chunk_id[loaded.chunks[0].chunk_id].weights
+    assert vector_index_path(tmp_path).exists()
 
 
 def test_load_index_or_ingest_prefers_existing_stale_index(tmp_path: Path) -> None:
@@ -77,3 +84,17 @@ def test_load_index_or_ingest_falls_back_when_index_is_unreadable(tmp_path: Path
     )
 
     assert [source.uri for source in loaded.sources] == ["fresh.txt"]
+
+
+def test_load_vector_index_returns_none_when_sidecar_is_missing(tmp_path: Path) -> None:
+    summary = ingest_retrieval_sources(local_docs_dir=FIXTURES, online_sources_path=None)
+
+    assert load_vector_index(tmp_path / "missing", summary.chunks) is None
+
+
+def test_load_vector_index_returns_none_when_sidecar_is_stale(tmp_path: Path) -> None:
+    summary = ingest_retrieval_sources(local_docs_dir=FIXTURES, online_sources_path=None)
+    write_retrieval_index(summary, tmp_path)
+    changed_chunks = (replace(summary.chunks[0], content_hash="different"), *summary.chunks[1:])
+
+    assert load_vector_index(tmp_path, changed_chunks) is None

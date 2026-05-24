@@ -131,6 +131,8 @@ class RetrievalChunkResponse(BaseModel):
     score: float
     bm25_score: float
     keyword_score: float
+    vector_score: float = 0.0
+    combined_score: float | None = None
 
 
 class RetrievalQueryResponse(BaseModel):

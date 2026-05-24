@@ -106,6 +106,83 @@ class KeywordIndex:
         return matches / len(query_terms)
 
 
+@dataclass(frozen=True)
+class VectorEntry:
+    chunk_id: str
+    source_id: str
+    content_hash: str | None
+    weights: dict[str, float]
+    norm: float
+
+
+@dataclass(frozen=True)
+class VectorIndex:
+    entries_by_chunk_id: dict[str, VectorEntry]
+
+    def query(self, query: str) -> dict[str, float]:
+        query_vector, query_norm = _term_vector(_tokens(query))
+        if query_norm <= 0:
+            return {}
+
+        scores: dict[str, float] = {}
+        for chunk_id, entry in self.entries_by_chunk_id.items():
+            if entry.norm <= 0:
+                continue
+            dot_product = sum(
+                weight * entry.weights.get(term, 0.0)
+                for term, weight in query_vector.items()
+            )
+            if dot_product <= 0:
+                continue
+            scores[chunk_id] = round(dot_product / (query_norm * entry.norm), 6)
+        return scores
+
+
+@dataclass(frozen=True)
+class MergedRetriever:
+    keyword_index: KeywordIndex
+    vector_index: VectorIndex | None = None
+    keyword_weight: float = 0.8
+    vector_weight: float = 0.2
+
+    def query(self, query: str, *, limit: int = 5) -> tuple[RankedChunk, ...]:
+        keyword_results = self.keyword_index.query(
+            query,
+            limit=max(limit, len(self.keyword_index.chunks)),
+        )
+        if not keyword_results or limit <= 0:
+            return ()
+
+        vector_scores = self.vector_index.query(query) if self.vector_index is not None else {}
+        best_keyword_score = max(result.score for result in keyword_results) or 1.0
+        merged: list[RankedChunk] = []
+        for result in keyword_results:
+            normalized_keyword = result.score / best_keyword_score
+            vector_score = vector_scores.get(result.chunk.chunk_id, 0.0)
+            if vector_scores:
+                combined_score = (
+                    self.keyword_weight * normalized_keyword
+                    + self.vector_weight * vector_score
+                    + result.manual_boost
+                )
+            else:
+                combined_score = result.score
+            merged.append(
+                RankedChunk(
+                    chunk=result.chunk,
+                    source=result.source,
+                    score=round(combined_score, 6),
+                    bm25_score=result.bm25_score,
+                    keyword_score=result.keyword_score,
+                    manual_boost=result.manual_boost,
+                    vector_score=round(vector_score, 6),
+                    combined_score=round(combined_score, 6),
+                ),
+            )
+
+        return tuple(sorted(merged, key=_rank_sort_key)[:limit])
+
+
 def build_keyword_index(
     *,
     sources: tuple[SourceMetadata, ...],
@@ -122,6 +199,30 @@ def build_keyword_index(
     )
 
 
+def build_vector_index(
+    *,
+    chunks: tuple[ChunkMetadata, ...],
+) -> VectorIndex:
+    return VectorIndex(
+        entries_by_chunk_id={
+            chunk.chunk_id: _vector_entry(chunk)
+            for chunk in chunks
+        },
+    )
+
+
+def build_merged_retriever(
+    *,
+    sources: tuple[SourceMetadata, ...],
+    chunks: tuple[ChunkMetadata, ...],
+    vector_index: VectorIndex | None = None,
+) -> MergedRetriever:
+    return MergedRetriever(
+        keyword_index=build_keyword_index(sources=sources, chunks=chunks),
+        vector_index=vector_index,
+    )
+
+
 def _tokens(text: str) -> list[str]:
     return TOKEN_RE.findall(text.lower())
 
@@ -131,6 +232,26 @@ def _searchable_text(chunk: ChunkMetadata) -> str:
     if chunk.section:
         parts.append(chunk.section)
     return "\n".join(parts)
+
+
+def _vector_entry(chunk: ChunkMetadata) -> VectorEntry:
+    vector, norm = _term_vector(_tokens(_searchable_text(chunk)))
+    return VectorEntry(
+        chunk_id=chunk.chunk_id,
+        source_id=chunk.source_id,
+        content_hash=chunk.content_hash,
+        weights=vector,
+        norm=norm,
+    )
+
+
+def _term_vector(tokens: list[str] | tuple[str, ...]) -> tuple[dict[str, float], float]:
+    counts = Counter(tokens)
+    if not counts:
+        return {}, 0.0
+    weights = {term: 1.0 + log(count) for term, count in counts.items()}
+    norm = sum(weight * weight for weight in weights.values()) ** 0.5
+    return weights, norm
 
 
 def _rank_sort_key(result: RankedChunk) -> tuple:

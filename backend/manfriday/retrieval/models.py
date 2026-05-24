@@ -45,6 +45,8 @@ class RankedChunk:
     bm25_score: float
     keyword_score: float
     manual_boost: float = 0.0
+    vector_score: float = 0.0
+    combined_score: float | None = None
 
 
 @dataclass(frozen=True)

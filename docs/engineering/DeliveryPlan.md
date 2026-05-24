@@ -258,6 +258,11 @@ Implemented slice:
   to `RETRIEVAL_INDEX_DIR/index.json`; query and voice retrieval prefer that
   index when it is available and fall back to live rebuild when it is missing,
   unreadable, or empty.
+- `manfriday ingest` and `POST /retrieval/ingest` also persist a lightweight
+  vector-style sidecar index to `RETRIEVAL_INDEX_DIR/vector_index.json`; query
+  and voice retrieval merge BM25/keyword scores with vector scores when the
+  sidecar matches the current chunk metadata, otherwise they fall back to the
+  keyword baseline.
 - Assistant transcript events, push-to-talk API responses, and session memory
   now include citation references when retrieval context is used.
 - Android parses citation arrays from transcript events and renders compact
@@ -278,6 +283,9 @@ Implemented slice:
   size-limit skips, extraction failures, and PDF-ranked query results.
 - Index persistence coverage validates metadata roundtrip, stale index
   preference, missing-index fallback, and unreadable-index fallback.
+- Merge/rerank coverage validates keyword-only fallback, stale/missing vector
+  sidecar behavior, stable merged ordering, local/manual tie preference, and
+  voice citations from merged results.
 
 Integration checkpoint:
 

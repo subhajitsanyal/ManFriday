@@ -1,4 +1,11 @@
-from manfriday.retrieval import ChunkMetadata, SourceMetadata, build_keyword_index
+from manfriday.retrieval import (
+    ChunkMetadata,
+    SourceMetadata,
+    VectorIndex,
+    build_keyword_index,
+    build_merged_retriever,
+)
+from manfriday.retrieval.search import VectorEntry
 
 
 def test_keyword_query_returns_matching_chunk() -> None:
@@ -89,6 +96,102 @@ def test_empty_keyword_query_returns_no_results() -> None:
     )
 
     assert index.query(" ?! ") == ()
+
+
+def test_merged_retriever_uses_keyword_only_fallback_without_vector_index() -> None:
+    retriever = build_merged_retriever(
+        sources=(
+            _source("manual", "local_file", "manual.md", manual=True),
+            _source("web", "web", "https://example.test/camera"),
+        ),
+        chunks=(
+            _chunk("web", 0, "camera mount"),
+            _chunk("manual", 0, "camera mount"),
+        ),
+    )
+
+    results = retriever.query("camera")
+
+    assert [item.source.source_id for item in results] == ["manual", "web"]
+    assert results[0].vector_score == 0.0
+    assert results[0].combined_score == results[0].score
+
+
+def test_merged_retriever_combines_keyword_and_vector_scores_stably() -> None:
+    sources = (
+        _source("a", "local_file", "a.md"),
+        _source("b", "local_file", "b.md"),
+    )
+    chunks = (
+        _chunk("a", 0, "camera mount"),
+        _chunk("b", 0, "camera mount"),
+    )
+    vector_index = VectorIndex(
+        entries_by_chunk_id={
+            "a_0": VectorEntry(
+                chunk_id="a_0",
+                source_id="a",
+                content_hash=None,
+                weights={"camera": 1.0},
+                norm=1.0,
+            ),
+            "b_0": VectorEntry(
+                chunk_id="b_0",
+                source_id="b",
+                content_hash=None,
+                weights={"mount": 1.0},
+                norm=1.0,
+            ),
+        },
+    )
+    retriever = build_merged_retriever(
+        sources=sources,
+        chunks=chunks,
+        vector_index=vector_index,
+    )
+
+    first = retriever.query("camera")
+    second = retriever.query("camera")
+
+    assert [item.source.source_id for item in first] == ["a", "b"]
+    assert first[0].vector_score > first[1].vector_score
+    assert [item.chunk.chunk_id for item in first] == [item.chunk.chunk_id for item in second]
+
+
+def test_merged_retriever_preserves_local_manual_preference_when_scores_tie() -> None:
+    retriever = build_merged_retriever(
+        sources=(
+            _source("web", "web", "https://example.test/camera"),
+            _source("manual", "local_file", "manual.md", manual=True),
+        ),
+        chunks=(
+            _chunk("web", 0, "camera mount"),
+            _chunk("manual", 0, "camera mount"),
+        ),
+        vector_index=VectorIndex(
+            entries_by_chunk_id={
+                "web_0": VectorEntry(
+                    chunk_id="web_0",
+                    source_id="web",
+                    content_hash=None,
+                    weights={"camera": 1.0},
+                    norm=1.0,
+                ),
+                "manual_0": VectorEntry(
+                    chunk_id="manual_0",
+                    source_id="manual",
+                    content_hash=None,
+                    weights={"camera": 1.0},
+                    norm=1.0,
+                ),
+            },
+        ),
+    )
+
+    results = retriever.query("camera")
+
+    assert [item.source.source_id for item in results] == ["manual", "web"]
+    assert results[0].source.manufacturer_or_manual is True
 
 
 def _source(

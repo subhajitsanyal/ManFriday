@@ -90,8 +90,8 @@ settings storage, and Android tests are still pending.
 - [x] Configured URL ingestion uses YAML and reports per-source failures.
 - [x] PDF ingestion applies page and size limits.
 - [x] Source/chunk metadata index persists locally under `RETRIEVAL_INDEX_DIR`.
-- [ ] FAISS vector index persists locally.
-- [ ] Merge/rerank applies local/manual source preference.
+- [x] Lightweight vector-style sidecar index persists locally under `RETRIEVAL_INDEX_DIR`.
+- [x] Merge/rerank applies local/manual source preference.
 
 ### Phase 4a
 

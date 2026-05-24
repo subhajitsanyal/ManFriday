@@ -2,8 +2,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from manfriday.retrieval.index import load_vector_index
 from manfriday.retrieval.models import IngestionSummary, RetrievalContext
-from manfriday.retrieval.search import build_keyword_index
+from manfriday.retrieval.search import build_merged_retriever
 from manfriday.retrieval.sources import load_index_or_ingest_retrieval_sources
 
 
@@ -29,8 +30,12 @@ class RetrievalContextBuilder:
 
     def build(self, query: str) -> RetrievalContext:
         summary = self.ingest_fn(self.local_docs_dir, self.online_sources_path, self.index_dir)
-        index = build_keyword_index(sources=summary.sources, chunks=summary.chunks)
-        return RetrievalContext(query=query, chunks=index.query(query, limit=self.limit))
+        retriever = build_merged_retriever(
+            sources=summary.sources,
+            chunks=summary.chunks,
+            vector_index=load_vector_index(self.index_dir, summary.chunks),
+        )
+        return RetrievalContext(query=query, chunks=retriever.query(query, limit=self.limit))
 
 
 def build_retrieval_context(

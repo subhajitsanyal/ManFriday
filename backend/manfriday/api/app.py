@@ -35,9 +35,10 @@ from manfriday.frames.models import FrameMetadata
 from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
 from manfriday.retrieval import (
-    build_keyword_index,
+    build_merged_retriever,
     ingest_retrieval_sources,
     load_index_or_ingest_retrieval_sources,
+    load_vector_index,
     write_retrieval_index,
 )
 from manfriday.retrieval.summary import ingestion_summary_to_dict
@@ -240,8 +241,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             online_sources_path=app_settings.retrieval_online_sources_path,
             index_dir=app_settings.retrieval_index_dir,
         )
-        index = build_keyword_index(sources=summary.sources, chunks=summary.chunks)
-        results = index.query(request.query, limit=request.limit)
+        retriever = build_merged_retriever(
+            sources=summary.sources,
+            chunks=summary.chunks,
+            vector_index=load_vector_index(app_settings.retrieval_index_dir, summary.chunks),
+        )
+        results = retriever.query(request.query, limit=request.limit)
         return RetrievalQueryResponse(
             query=request.query,
             source_count=len(summary.sources),
@@ -262,6 +267,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "score": result.score,
                     "bm25_score": result.bm25_score,
                     "keyword_score": result.keyword_score,
+                    "vector_score": result.vector_score,
+                    "combined_score": result.combined_score,
                 }
                 for result in results
             ],

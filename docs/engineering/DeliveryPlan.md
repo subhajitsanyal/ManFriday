@@ -246,6 +246,12 @@ Implemented slice:
 - Retrieval context builder that pulls top keyword-ranked chunks for the user
   question and injects source/title/section metadata into OpenAI and Bedrock
   model prompts.
+- Configured URL ingestion from `RETRIEVAL_ONLINE_SOURCES_PATH` with a
+  dependency-light trusted-source YAML reader, stdlib HTTP fetcher, timeout,
+  max-size and content-type checks, and per-source failure reporting.
+- Local and configured URL sources are merged for `manfriday ingest`,
+  `POST /retrieval/ingest`, `POST /retrieval/query`, and voice retrieval
+  context.
 - Assistant transcript events, push-to-talk API responses, and session memory
   now include citation references when retrieval context is used.
 - Android parses citation arrays from transcript events and renders compact
@@ -260,6 +266,8 @@ Implemented slice:
   block answers.
 - Android unit coverage verifies citation parsing from transcript events and
   citation display labels.
+- Configured URL coverage uses a local fixture HTTP server to validate indexed
+  URL counts, failures, CLI/API summaries, and URL-ranked query results.
 
 Integration checkpoint:
 

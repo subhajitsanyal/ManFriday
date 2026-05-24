@@ -34,7 +34,7 @@ from manfriday.frames import FrameStore
 from manfriday.frames.models import FrameMetadata
 from manfriday.gopro import GoProService, build_gopro_controller
 from manfriday.livekit import LiveKitTokenIssuer
-from manfriday.retrieval import build_keyword_index, ingest_local_documents
+from manfriday.retrieval import build_keyword_index, ingest_retrieval_sources
 from manfriday.retrieval.summary import ingestion_summary_to_dict
 from manfriday.sessions import Session, SessionStatus, SessionStore
 from manfriday.voice_agent import VoiceAgentWorker
@@ -216,7 +216,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(auth_dependency)],
     )
     async def retrieval_ingest() -> RetrievalIngestResponse:
-        summary = ingest_local_documents(app_settings.retrieval_local_docs_dir)
+        summary = ingest_retrieval_sources(
+            local_docs_dir=app_settings.retrieval_local_docs_dir,
+            online_sources_path=app_settings.retrieval_online_sources_path,
+        )
         return RetrievalIngestResponse(**ingestion_summary_to_dict(summary))
 
     @app.post(
@@ -226,7 +229,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(auth_dependency)],
     )
     async def retrieval_query(request: RetrievalQueryRequest) -> RetrievalQueryResponse:
-        summary = ingest_local_documents(app_settings.retrieval_local_docs_dir)
+        summary = ingest_retrieval_sources(
+            local_docs_dir=app_settings.retrieval_local_docs_dir,
+            online_sources_path=app_settings.retrieval_online_sources_path,
+        )
         index = build_keyword_index(sources=summary.sources, chunks=summary.chunks)
         results = index.query(request.query, limit=request.limit)
         return RetrievalQueryResponse(

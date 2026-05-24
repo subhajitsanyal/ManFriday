@@ -102,6 +102,28 @@ def ingest_local_documents(root: Path) -> IngestionSummary:
     return LocalDocumentIngestor().ingest_directory(root)
 
 
+def merge_ingestion_summaries(*summaries: IngestionSummary) -> IngestionSummary:
+    failed = tuple(item for summary in summaries for item in summary.failed)
+    skipped = tuple(item for summary in summaries for item in summary.skipped)
+    sources = tuple(source for summary in summaries for source in summary.sources)
+    chunks = tuple(chunk for summary in summaries for chunk in summary.chunks)
+    source_results = tuple(result for summary in summaries for result in summary.source_results)
+    return IngestionSummary(
+        status=(
+            "completed_with_errors"
+            if any(summary.status == "completed_with_errors" for summary in summaries)
+            else "completed"
+        ),
+        local_files_indexed=sum(summary.local_files_indexed for summary in summaries),
+        urls_indexed=sum(summary.urls_indexed for summary in summaries),
+        skipped=skipped,
+        failed=failed,
+        sources=sources,
+        chunks=chunks,
+        source_results=source_results,
+    )
+
+
 def _source_id(relative_path: str) -> str:
     return f"local_{sha256(relative_path.encode('utf-8')).hexdigest()[:16]}"
 

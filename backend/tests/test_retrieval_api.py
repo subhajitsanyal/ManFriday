@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from manfriday.api.app import create_app
 from manfriday.cli import main as cli_main
 from manfriday.config.settings import Settings
+from tests.test_retrieval_url_ingestion import _fixture_server
 
 FIXTURES = Path(__file__).parent / "fixtures" / "retrieval"
 
@@ -47,6 +48,34 @@ def test_retrieval_ingest_returns_per_source_summary() -> None:
     assert manual["manufacturer_or_manual"] is True
     assert manual["content_hash"]
     assert manual["retrieved_at"].endswith("Z")
+
+
+def test_retrieval_ingest_includes_configured_url_sources(tmp_path: Path) -> None:
+    with _fixture_server() as server:
+        sources_path = tmp_path / "sources.yaml"
+        sources_path.write_text(
+            f"""
+            sources:
+              - title: Manufacturer Torque Guide
+                url: {server.url('/guide.md')}
+                tags: [manufacturer, torque]
+                manufacturer_or_manual: true
+            """,
+            encoding="utf-8",
+        )
+        client = TestClient(create_app(_settings(RETRIEVAL_ONLINE_SOURCES_PATH=sources_path)))
+
+        response = client.post("/retrieval/ingest", headers=_headers())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["local_files_indexed"] == 2
+    assert body["urls_indexed"] == 1
+    assert body["source_count"] == 3
+    source = next(source for source in body["sources"] if source["type"] == "configured_url")
+    assert source["title"] == "Manufacturer Torque Guide"
+    assert source["manufacturer_or_manual"] is True
 
 
 def test_retrieval_ingest_reports_missing_directory() -> None:
@@ -128,6 +157,33 @@ def test_retrieval_query_handles_missing_directory() -> None:
     assert body["results"] == []
 
 
+def test_retrieval_query_returns_configured_url_chunks(tmp_path: Path) -> None:
+    with _fixture_server() as server:
+        sources_path = tmp_path / "sources.yaml"
+        sources_path.write_text(
+            f"""
+            sources:
+              - title: Manufacturer Torque Guide
+                url: {server.url('/guide.md')}
+                manufacturer_or_manual: true
+            """,
+            encoding="utf-8",
+        )
+        client = TestClient(create_app(_settings(RETRIEVAL_ONLINE_SOURCES_PATH=sources_path)))
+
+        response = client.post(
+            "/retrieval/query",
+            headers=_headers(),
+            json={"query": "torque wrench", "limit": 3},
+        )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["source_type"] == "configured_url"
+    assert result["source_title"] == "Manufacturer Torque Guide"
+    assert "4 Nm" in result["text"]
+
+
 def test_manfriday_ingest_cli_outputs_summary(capsys, monkeypatch) -> None:
     monkeypatch.setenv("MANFRIDAY_LOCAL_SECRET", "test-secret")
     monkeypatch.setattr(
@@ -143,6 +199,39 @@ def test_manfriday_ingest_cli_outputs_summary(capsys, monkeypatch) -> None:
     assert body["local_files_indexed"] == 2
     assert body["source_count"] == 2
     assert body["chunk_count"] == 4
+
+
+def test_manfriday_ingest_cli_includes_configured_urls(capsys, monkeypatch, tmp_path: Path) -> None:
+    with _fixture_server() as server:
+        sources_path = tmp_path / "sources.yaml"
+        sources_path.write_text(
+            f"""
+            sources:
+              - title: Manufacturer Torque Guide
+                url: {server.url('/guide.md')}
+            """,
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("MANFRIDAY_LOCAL_SECRET", "test-secret")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "manfriday",
+                "ingest",
+                "--local-docs-dir",
+                str(FIXTURES),
+                "--online-sources-path",
+                str(sources_path),
+            ],
+        )
+
+        cli_main()
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["local_files_indexed"] == 2
+    assert body["urls_indexed"] == 1
+    assert body["source_count"] == 3
 
 
 def _settings(**overrides) -> Settings:

@@ -87,8 +87,8 @@ settings storage, and Android tests are still pending.
 - [x] Agent prompt includes retrieval context for local Markdown/text chunks.
 - [x] Push-to-talk responses and transcript events include citation references.
 - [x] Android renders local Markdown/text citation references in assistant transcript rows.
+- [x] Configured URL ingestion uses YAML and reports per-source failures.
 - [ ] PDF ingestion applies page and size limits.
-- [ ] Configured URL ingestion uses YAML and reports per-source failures.
 - [ ] FAISS vector index persists locally.
 - [ ] Merge/rerank applies local/manual source preference.
 

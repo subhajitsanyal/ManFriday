@@ -77,8 +77,8 @@ settings storage, and Android tests are still pending.
 
 ### Phase 4
 
-- [ ] Source/chunk metadata schema is implemented.
-- [ ] Markdown/text ingestion passes fixture tests.
+- [x] Source/chunk metadata schema is implemented.
+- [x] Markdown/text ingestion passes fixture tests.
 - [ ] PDF ingestion applies page and size limits.
 - [ ] Configured URL ingestion uses YAML and reports per-source failures.
 - [ ] BM25 index works.

@@ -227,6 +227,16 @@ Key contracts to review before implementation:
 - Ingestion summary error shape.
 - Confidence and source priority rules.
 
+Implemented slice:
+
+- Retrieval metadata dataclasses for local/configured/web sources, chunks,
+  per-source ingestion results, skipped sources, failures, and summaries.
+- Deterministic local Markdown/text ingestion with stable source/chunk IDs,
+  title/section extraction, content hashes, timestamps, manual-source detection,
+  unsupported-file skips, and file-size limits.
+- Fixture coverage for local `.md`, `.txt`, unsupported files, size-limit skips,
+  stable IDs, source metadata, and chunk metadata.
+
 Integration checkpoint:
 
 - Ingest fixture docs and a local test URL, ask a question that cites retrieved context, and render citations in Android transcript.
